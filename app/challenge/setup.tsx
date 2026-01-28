@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Target, Zap, Scale, Calendar, Trophy, X } from 'lucide-react-native';
+import { Target, Zap, Scale, Calendar, Trophy, X, CheckCircle, Sparkles } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/Button';
@@ -15,15 +15,15 @@ const challengeOptions = [
     name: 'Strength Focus',
     description: 'Build muscle and increase strength with progressive resistance training',
     icon: Target,
-    color: '#EF4444',
-    benefits: ['Muscle growth', 'Increased strength', 'Progressive difficulty'],
+    gradient: ['#EF4444', '#DC2626'],
+    benefits: ['Muscle growth', 'Increased strength', 'Progressive overload'],
   },
   {
     type: 'consistency' as ChallengeType,
     name: 'Consistency Challenge',
     description: 'Build a daily habit with short, manageable workouts',
     icon: Zap,
-    color: '#F59E0B',
+    gradient: ['#F59E0B', '#D97706'],
     benefits: ['Daily routine', 'Quick workouts', 'Habit building'],
   },
   {
@@ -31,7 +31,7 @@ const challengeOptions = [
     name: 'Balanced Program',
     description: 'Mix of strength, cardio, and flexibility for complete fitness',
     icon: Scale,
-    color: '#10B981',
+    gradient: ['#10B981', '#059669'],
     benefits: ['Varied workouts', 'Complete fitness', 'Sustainable approach'],
   },
 ];
@@ -58,21 +58,36 @@ export default function ChallengeSetupScreen() {
   const selectedOption = challengeOptions.find(opt => opt.type === selectedType)!;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <LinearGradient
-        colors={[selectedOption.color + '20', 'transparent']}
+        colors={[colors.primary + '15', colors.background]}
         style={styles.headerGradient}
       />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.closeButton, { backgroundColor: colors.surface }]}
+        >
           <X size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>30-Day Challenge</Text>
-        <Text style={styles.subtitle}>Choose your path to transformation</Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.titleSection}>
+          <View style={[styles.iconBadge, { backgroundColor: colors.primary + '20' }]}>
+            <Trophy size={32} color={colors.primary} />
+          </View>
+          <Text style={[styles.title, { color: colors.text }]}>30-Day Challenge</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            Choose your transformation path
+          </Text>
+        </View>
+
         <View style={styles.optionsContainer}>
           {challengeOptions.map((option) => {
             const Icon = option.icon;
@@ -84,84 +99,96 @@ export default function ChallengeSetupScreen() {
                 onPress={() => setSelectedType(option.type)}
                 activeOpacity={0.7}
               >
-                <View style={[
-                  styles.optionCard,
-                  isSelected && { borderColor: option.color, borderWidth: 2 }
-                ]}>
-                  <View style={[styles.iconContainer, { backgroundColor: option.color + '20' }]}>
-                    <Icon size={32} color={option.color} />
-                  </View>
+                <View
+                  style={[
+                    styles.optionCard,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: isSelected ? option.gradient[0] : colors.border,
+                      borderWidth: isSelected ? 2 : 1,
+                    },
+                  ]}
+                >
+                  <LinearGradient
+                    colors={option.gradient as any}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.optionHeader}
+                  >
+                    <Icon size={28} color="white" />
+                    {isSelected && (
+                      <View style={styles.selectedBadge}>
+                        <CheckCircle size={20} color="white" />
+                      </View>
+                    )}
+                  </LinearGradient>
 
                   <View style={styles.optionContent}>
-                    <Text style={styles.optionName}>{option.name}</Text>
-                    <Text style={styles.optionDescription}>{option.description}</Text>
+                    <Text style={[styles.optionName, { color: colors.text }]}>
+                      {option.name}
+                    </Text>
+                    <Text style={[styles.optionDescription, { color: colors.textSecondary }]}>
+                      {option.description}
+                    </Text>
 
                     <View style={styles.benefitsContainer}>
                       {option.benefits.map((benefit, index) => (
-                        <View key={index} style={styles.benefitTag}>
-                          <Text style={styles.benefitText}>{benefit}</Text>
+                        <View
+                          key={index}
+                          style={[styles.benefitTag, { backgroundColor: colors.surfaceSecondary }]}
+                        >
+                          <Text style={[styles.benefitText, { color: colors.textSecondary }]}>
+                            {benefit}
+                          </Text>
                         </View>
                       ))}
                     </View>
                   </View>
-
-                  {isSelected && (
-                    <View style={[styles.selectedIndicator, { backgroundColor: option.color }]}>
-                      <Trophy size={16} color="white" />
-                    </View>
-                  )}
                 </View>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <View style={styles.infoSection}>
-          <View style={styles.infoCard}>
-            <Calendar size={24} color={colors.primary} />
-            <Text style={styles.infoTitle}>30-Day Journey</Text>
-            <Text style={styles.infoText}>
-              Complete daily workouts for 30 days with strategic rest days every week
-            </Text>
+        <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.infoHeader}>
+            <Sparkles size={20} color={colors.primary} />
+            <Text style={[styles.infoHeaderText, { color: colors.text }]}>What's Included</Text>
           </View>
 
-          <View style={styles.infoCard}>
-            <Trophy size={24} color={colors.primary} />
-            <Text style={styles.infoTitle}>Earn Achievements</Text>
-            <Text style={styles.infoText}>
-              Unlock badges and celebrate milestones at days 7, 14, 21, and 30
-            </Text>
-          </View>
-
-          <View style={styles.infoCard}>
-            <Zap size={24} color={colors.primary} />
-            <Text style={styles.infoTitle}>Build Momentum</Text>
-            <Text style={styles.infoText}>
-              Track your streak and watch your consistency improve day by day
-            </Text>
+          <View style={styles.infoList}>
+            {[
+              { icon: Calendar, text: '30 days of structured workouts' },
+              { icon: Trophy, text: 'Achievement badges & milestones' },
+              { icon: Target, text: 'Progress tracking & analytics' },
+              { icon: Zap, text: '3 pause days for flexibility' },
+            ].map((item, index) => (
+              <View key={index} style={styles.infoItem}>
+                <View style={[styles.infoIcon, { backgroundColor: colors.primaryLight }]}>
+                  <item.icon size={16} color={colors.primary} />
+                </View>
+                <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                  {item.text}
+                </Text>
+              </View>
+            ))}
           </View>
         </View>
 
-        <View style={styles.commitmentSection}>
-          <Text style={styles.commitmentTitle}>Your Commitment</Text>
-          <Text style={styles.commitmentText}>
-            By starting this challenge, you commit to:
+        <View style={[styles.commitmentCard, { backgroundColor: colors.surfaceSecondary }]}>
+          <Text style={[styles.commitmentTitle, { color: colors.text }]}>
+            Your Commitment
           </Text>
-          <View style={styles.commitmentList}>
-            <Text style={styles.commitmentItem}>• Complete daily assigned workouts</Text>
-            <Text style={styles.commitmentItem}>• Honor rest days for recovery</Text>
-            <Text style={styles.commitmentItem}>• Track progress consistently</Text>
-            <Text style={styles.commitmentItem}>• Stay motivated through ups and downs</Text>
-          </View>
-          <Text style={styles.commitmentNote}>
-            You can pause up to 3 days if needed, but consistency is key to success!
+          <Text style={[styles.commitmentText, { color: colors.textSecondary }]}>
+            Complete daily workouts, honor rest days, and track your progress consistently.
+            You can pause up to 3 days if needed, but consistency is key!
           </Text>
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
         <Button
-          title={isLoading ? 'Starting...' : 'Start 30-Day Challenge'}
+          title={isLoading ? 'Starting Challenge...' : 'Start My 30-Day Challenge'}
           onPress={handleStartChallenge}
           disabled={isLoading}
           variant="primary"
@@ -181,50 +208,80 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 300,
+    height: 250,
   },
   header: {
     paddingTop: 60,
     paddingHorizontal: 24,
-    paddingBottom: 24,
   },
   closeButton: {
-    alignSelf: 'flex-start',
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  content: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 120,
+  },
+  titleSection: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 32,
+  },
+  iconBadge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 16,
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
     marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
+    textAlign: 'center',
   },
   optionsContainer: {
     gap: 16,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   optionCard: {
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    position: 'relative',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
+  optionHeader: {
+    padding: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+  },
+  selectedBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 20,
+    padding: 4,
   },
   optionContent: {
-    flex: 1,
+    padding: 20,
   },
   optionName: {
     fontSize: 20,
@@ -234,7 +291,7 @@ const styles = StyleSheet.create({
   optionDescription: {
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   benefitsContainer: {
     flexDirection: 'row',
@@ -248,65 +305,57 @@ const styles = StyleSheet.create({
   },
   benefitText: {
     fontSize: 12,
+    fontWeight: '500',
   },
-  selectedIndicator: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
+  infoCard: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  infoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  infoHeaderText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  infoList: {
+    gap: 12,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  infoIcon: {
     width: 32,
     height: 32,
     borderRadius: 16,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  infoSection: {
-    gap: 16,
-    marginBottom: 32,
-  },
-  infoCard: {
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 12,
-    marginBottom: 8,
   },
   infoText: {
+    flex: 1,
     fontSize: 14,
-    textAlign: 'center',
     lineHeight: 20,
   },
-  commitmentSection: {
+  commitmentCard: {
     borderRadius: 16,
     padding: 20,
-    marginBottom: 100,
-    borderWidth: 1,
+    marginBottom: 24,
   },
   commitmentTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   commitmentText: {
     fontSize: 14,
-    marginBottom: 12,
-  },
-  commitmentList: {
-    gap: 8,
-    marginBottom: 16,
-  },
-  commitmentItem: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  commitmentNote: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    lineHeight: 18,
+    lineHeight: 22,
   },
   footer: {
     position: 'absolute',
@@ -314,6 +363,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 24,
+    paddingBottom: 32,
     borderTopWidth: 1,
   },
   startButton: {

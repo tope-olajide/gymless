@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Trophy, Star, Flame, Target, Calendar, Award } from 'lucide-react-native';
+import { Trophy, Star, Flame, Target, Calendar, Award, Sparkles, ChevronRight } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/Button';
@@ -27,6 +27,7 @@ export default function ChallengeCompleteScreen() {
   const averageWorkoutTime = challengeWorkouts.length > 0
     ? Math.round(totalWorkoutTime / challengeWorkouts.length)
     : 0;
+  const completionRate = Math.round((challengeData.completedDays.length / challengeData.targetDays) * 100);
 
   const handleStartNewChallenge = () => {
     router.replace('/challenge/setup');
@@ -39,74 +40,116 @@ export default function ChallengeCompleteScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <LinearGradient
-        colors={['#10B981', '#059669', '#047857']}
+        colors={['#10B981', '#059669']}
         style={styles.backgroundGradient}
       />
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.celebrationSection}>
           <View style={styles.trophyContainer}>
-            <Trophy size={80} color="white" />
-            <View style={styles.sparkleContainer}>
-              <Star size={24} color="#FCD34D" style={styles.sparkle1} />
-              <Star size={20} color="#FCD34D" style={styles.sparkle2} />
-              <Star size={28} color="#FCD34D" style={styles.sparkle3} />
+            <View style={[styles.trophyCircle, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
+              <Trophy size={80} color="white" />
+            </View>
+            <View style={styles.sparklesContainer}>
+              <Sparkles size={24} color="#FCD34D" style={styles.sparkle1} />
+              <Sparkles size={20} color="#FCD34D" style={styles.sparkle2} />
+              <Sparkles size={28} color="#FCD34D" style={styles.sparkle3} />
             </View>
           </View>
 
           <Text style={styles.congratsTitle}>Challenge Complete!</Text>
           <Text style={styles.congratsSubtitle}>
-            You've conquered the 30-day challenge
+            You've conquered your 30-day fitness challenge
           </Text>
         </View>
 
         <View style={styles.statsSection}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Achievement</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Your Achievement
+          </Text>
 
           <View style={styles.statsGrid}>
             <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Calendar size={28} color="#10B981" />
-              <Text style={[styles.statValue, { color: colors.text }]}>{challengeData.currentDay}</Text>
-              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Days Completed</Text>
+              <View style={[styles.statIcon, { backgroundColor: '#10B98120' }]}>
+                <Calendar size={24} color="#10B981" />
+              </View>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {challengeData.currentDay}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                Days Completed
+              </Text>
             </View>
 
             <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Flame size={28} color="#F59E0B" />
-              <Text style={[styles.statValue, { color: colors.text }]}>{challengeWorkouts.length}</Text>
-              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total Workouts</Text>
+              <View style={[styles.statIcon, { backgroundColor: '#F59E0B20' }]}>
+                <Flame size={24} color="#F59E0B" />
+              </View>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {challengeWorkouts.length}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                Total Workouts
+              </Text>
             </View>
 
             <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Target size={28} color="#3B82F6" />
-              <Text style={[styles.statValue, { color: colors.text }]}>{Math.round(totalWorkoutTime)}</Text>
-              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total Minutes</Text>
+              <View style={[styles.statIcon, { backgroundColor: '#3B82F620' }]}>
+                <Target size={24} color="#3B82F6" />
+              </View>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {Math.round(totalWorkoutTime)}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                Total Minutes
+              </Text>
             </View>
 
             <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Trophy size={28} color="#8B5CF6" />
-              <Text style={[styles.statValue, { color: colors.text }]}>{challengeAchievements.length}</Text>
-              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Achievements</Text>
+              <View style={[styles.statIcon, { backgroundColor: '#8B5CF620' }]}>
+                <Trophy size={24} color="#8B5CF6" />
+              </View>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {challengeAchievements.length}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                Achievements
+              </Text>
             </View>
           </View>
         </View>
 
         {challengeAchievements.length > 0 && (
           <View style={styles.achievementsSection}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Unlocked Achievements</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Unlocked Achievements
+            </Text>
 
             <View style={styles.achievementsList}>
               {challengeAchievements.map((achievement) => (
-                <View key={achievement.id} style={[styles.achievementCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <View style={styles.achievementIconContainer}>
-                    <Award size={24} color="#F59E0B" />
+                <View
+                  key={achievement.id}
+                  style={[styles.achievementCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                >
+                  <View style={[styles.achievementIconContainer, { backgroundColor: colors.secondaryLight }]}>
+                    <Award size={24} color={colors.secondary} />
                   </View>
                   <View style={styles.achievementContent}>
-                    <Text style={[styles.achievementName, { color: colors.text }]}>{achievement.name}</Text>
-                    <Text style={[styles.achievementDescription, { color: colors.textSecondary }]}>{achievement.description}</Text>
+                    <Text style={[styles.achievementName, { color: colors.text }]}>
+                      {achievement.name}
+                    </Text>
+                    <Text style={[styles.achievementDescription, { color: colors.textSecondary }]}>
+                      {achievement.description}
+                    </Text>
+                  </View>
+                  <View style={[styles.achievementDay, { backgroundColor: colors.primaryLight }]}>
+                    <Text style={[styles.achievementDayText, { color: colors.primary }]}>
+                      Day {achievement.day}
+                    </Text>
                   </View>
                 </View>
               ))}
@@ -115,11 +158,15 @@ export default function ChallengeCompleteScreen() {
         )}
 
         <View style={styles.summarySection}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Journey Summary</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Journey Summary
+          </Text>
 
           <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Challenge Type</Text>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                Challenge Type
+              </Text>
               <Text style={[styles.summaryValue, { color: colors.text }]}>
                 {challengeData.challengeType
                   ? challengeData.challengeType.charAt(0).toUpperCase() + challengeData.challengeType.slice(1)
@@ -127,39 +174,50 @@ export default function ChallengeCompleteScreen() {
               </Text>
             </View>
 
+            <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Start Date</Text>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                Duration
+              </Text>
               <Text style={[styles.summaryValue, { color: colors.text }]}>
-                {format(startDate, 'MMM d, yyyy')}
+                {format(startDate, 'MMM d')} - {format(endDate, 'MMM d, yyyy')}
               </Text>
             </View>
 
+            <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Completion Date</Text>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                Avg Workout
+              </Text>
               <Text style={[styles.summaryValue, { color: colors.text }]}>
-                {format(endDate, 'MMM d, yyyy')}
+                {averageWorkoutTime} minutes
               </Text>
             </View>
 
-            <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Average Workout</Text>
-              <Text style={[styles.summaryValue, { color: colors.text }]}>{averageWorkoutTime} min</Text>
-            </View>
+            <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
 
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Completion Rate</Text>
-              <Text style={[styles.summaryValue, { color: colors.text }]}>
-                {Math.round((challengeData.completedDays.length / challengeData.targetDays) * 100)}%
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                Completion Rate
+              </Text>
+              <Text style={[styles.summaryValue, { color: colors.success }]}>
+                {completionRate}%
               </Text>
             </View>
           </View>
         </View>
 
-        <View style={styles.motivationSection}>
-          <Text style={[styles.motivationTitle, { color: colors.text }]}>What's Next?</Text>
+        <View style={[styles.motivationCard, { backgroundColor: colors.surfaceSecondary }]}>
+          <View style={[styles.motivationIcon, { backgroundColor: colors.primaryLight }]}>
+            <Star size={28} color={colors.primary} />
+          </View>
+          <Text style={[styles.motivationTitle, { color: colors.text }]}>
+            What's Next?
+          </Text>
           <Text style={[styles.motivationText, { color: colors.textSecondary }]}>
-            You've proven you have what it takes to commit and follow through. Your dedication has
-            built a foundation of strength and consistency. Ready for another challenge?
+            You've proven you have what it takes! Your dedication has built a foundation of strength and consistency. Ready for another challenge?
           </Text>
         </View>
       </ScrollView>
@@ -170,6 +228,7 @@ export default function ChallengeCompleteScreen() {
           onPress={handleStartNewChallenge}
           variant="primary"
           style={styles.button}
+          icon={<ChevronRight size={20} color="white" />}
         />
         <Button
           title="Back to Home"
@@ -191,25 +250,37 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 400,
+    height: 450,
   },
   content: {
     flex: 1,
   },
-  contentContainer: {
+  scrollContent: {
     paddingTop: 80,
-    paddingBottom: 140,
+    paddingBottom: 160,
   },
   celebrationSection: {
     alignItems: 'center',
     paddingHorizontal: 24,
-    marginBottom: 40,
+    marginBottom: 48,
   },
   trophyContainer: {
     position: 'relative',
-    marginBottom: 24,
+    marginBottom: 32,
   },
-  sparkleContainer: {
+  trophyCircle: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  sparklesContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -219,36 +290,37 @@ const styles = StyleSheet.create({
   sparkle1: {
     position: 'absolute',
     top: -10,
-    right: -10,
+    right: 10,
   },
   sparkle2: {
     position: 'absolute',
-    bottom: 10,
+    bottom: 20,
     left: -10,
   },
   sparkle3: {
     position: 'absolute',
-    top: 10,
+    top: 20,
     left: -20,
   },
   congratsTitle: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '700',
     color: 'white',
-    marginBottom: 8,
+    marginBottom: 12,
     textAlign: 'center',
   },
   congratsSubtitle: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: 'rgba(255, 255, 255, 0.95)',
     textAlign: 'center',
+    lineHeight: 24,
   },
   statsSection: {
     paddingHorizontal: 24,
     marginBottom: 32,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '600',
     marginBottom: 16,
   },
@@ -262,11 +334,23 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  statIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statValue: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '700',
   },
   statLabel: {
@@ -283,18 +367,22 @@ const styles = StyleSheet.create({
   achievementCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    borderRadius: 12,
+    gap: 12,
+    borderRadius: 14,
     padding: 16,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   achievementIconContainer: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#FEF3C7',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   achievementContent: {
     flex: 1,
@@ -305,7 +393,17 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   achievementDescription: {
-    fontSize: 14,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  achievementDay: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  achievementDayText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   summarySection: {
     paddingHorizontal: 24,
@@ -314,13 +412,21 @@ const styles = StyleSheet.create({
   summaryCard: {
     borderRadius: 16,
     padding: 20,
-    gap: 16,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 12,
+  },
+  summaryDivider: {
+    height: 1,
   },
   summaryLabel: {
     fontSize: 14,
@@ -329,18 +435,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  motivationSection: {
-    paddingHorizontal: 24,
-    marginBottom: 32,
+  motivationCard: {
+    marginHorizontal: 24,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  motivationIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
   },
   motivationTitle: {
     fontSize: 20,
     fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   motivationText: {
     fontSize: 14,
     lineHeight: 22,
+    textAlign: 'center',
   },
   footer: {
     position: 'absolute',
@@ -348,6 +466,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 24,
+    paddingBottom: 32,
     gap: 12,
     borderTopWidth: 1,
   },
