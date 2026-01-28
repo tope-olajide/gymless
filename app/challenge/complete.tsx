@@ -37,7 +37,7 @@ export default function ChallengeCompleteScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <LinearGradient
         colors={['#10B981', '#059669', '#047857']}
         style={styles.backgroundGradient}
@@ -65,48 +65,48 @@ export default function ChallengeCompleteScreen() {
         </View>
 
         <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>Your Achievement</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Achievement</Text>
 
           <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
+            <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Calendar size={28} color="#10B981" />
-              <Text style={styles.statValue}>{challengeData.currentDay}</Text>
-              <Text style={styles.statLabel}>Days Completed</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{challengeData.currentDay}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Days Completed</Text>
             </View>
 
-            <View style={styles.statCard}>
+            <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Flame size={28} color="#F59E0B" />
-              <Text style={styles.statValue}>{challengeWorkouts.length}</Text>
-              <Text style={styles.statLabel}>Total Workouts</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{challengeWorkouts.length}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total Workouts</Text>
             </View>
 
-            <View style={styles.statCard}>
+            <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Target size={28} color="#3B82F6" />
-              <Text style={styles.statValue}>{Math.round(totalWorkoutTime)}</Text>
-              <Text style={styles.statLabel}>Total Minutes</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{Math.round(totalWorkoutTime)}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total Minutes</Text>
             </View>
 
-            <View style={styles.statCard}>
+            <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Trophy size={28} color="#8B5CF6" />
-              <Text style={styles.statValue}>{challengeAchievements.length}</Text>
-              <Text style={styles.statLabel}>Achievements</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{challengeAchievements.length}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Achievements</Text>
             </View>
           </View>
         </View>
 
         {challengeAchievements.length > 0 && (
           <View style={styles.achievementsSection}>
-            <Text style={styles.sectionTitle}>Unlocked Achievements</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Unlocked Achievements</Text>
 
             <View style={styles.achievementsList}>
               {challengeAchievements.map((achievement) => (
-                <View key={achievement.id} style={styles.achievementCard}>
+                <View key={achievement.id} style={[styles.achievementCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   <View style={styles.achievementIconContainer}>
                     <Award size={24} color="#F59E0B" />
                   </View>
                   <View style={styles.achievementContent}>
-                    <Text style={styles.achievementName}>{achievement.name}</Text>
-                    <Text style={styles.achievementDescription}>{achievement.description}</Text>
+                    <Text style={[styles.achievementName, { color: colors.text }]}>{achievement.name}</Text>
+                    <Text style={[styles.achievementDescription, { color: colors.textSecondary }]}>{achievement.description}</Text>
                   </View>
                 </View>
               ))}
@@ -115,12 +115,12 @@ export default function ChallengeCompleteScreen() {
         )}
 
         <View style={styles.summarySection}>
-          <Text style={styles.sectionTitle}>Journey Summary</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Journey Summary</Text>
 
-          <View style={styles.summaryCard}>
+          <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Challenge Type</Text>
-              <Text style={styles.summaryValue}>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Challenge Type</Text>
+              <Text style={[styles.summaryValue, { color: colors.text }]}>
                 {challengeData.challengeType
                   ? challengeData.challengeType.charAt(0).toUpperCase() + challengeData.challengeType.slice(1)
                   : 'N/A'}
@@ -128,27 +128,27 @@ export default function ChallengeCompleteScreen() {
             </View>
 
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Start Date</Text>
-              <Text style={styles.summaryValue}>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Start Date</Text>
+              <Text style={[styles.summaryValue, { color: colors.text }]}>
                 {format(startDate, 'MMM d, yyyy')}
               </Text>
             </View>
 
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Completion Date</Text>
-              <Text style={styles.summaryValue}>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Completion Date</Text>
+              <Text style={[styles.summaryValue, { color: colors.text }]}>
                 {format(endDate, 'MMM d, yyyy')}
               </Text>
             </View>
 
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Average Workout</Text>
-              <Text style={styles.summaryValue}>{averageWorkoutTime} min</Text>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Average Workout</Text>
+              <Text style={[styles.summaryValue, { color: colors.text }]}>{averageWorkoutTime} min</Text>
             </View>
 
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Completion Rate</Text>
-              <Text style={styles.summaryValue}>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Completion Rate</Text>
+              <Text style={[styles.summaryValue, { color: colors.text }]}>
                 {Math.round((challengeData.completedDays.length / challengeData.targetDays) * 100)}%
               </Text>
             </View>
@@ -156,15 +156,15 @@ export default function ChallengeCompleteScreen() {
         </View>
 
         <View style={styles.motivationSection}>
-          <Text style={styles.motivationTitle}>What's Next?</Text>
-          <Text style={styles.motivationText}>
+          <Text style={[styles.motivationTitle, { color: colors.text }]}>What's Next?</Text>
+          <Text style={[styles.motivationText, { color: colors.textSecondary }]}>
             You've proven you have what it takes to commit and follow through. Your dedication has
             built a foundation of strength and consistency. Ready for another challenge?
           </Text>
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
         <Button
           title="Start New Challenge"
           onPress={handleStartNewChallenge}
@@ -185,7 +185,6 @@ export default function ChallengeCompleteScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   backgroundGradient: {
     position: 'absolute',
@@ -251,7 +250,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 16,
   },
   statsGrid: {
@@ -261,22 +259,18 @@ const styles = StyleSheet.create({
   },
   statCard: {
     width: '48%',
-    backgroundColor: colors.cardBackground,
     borderRadius: 16,
     padding: 20,
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   statValue: {
     fontSize: 28,
     fontWeight: '700',
-    color: colors.text,
   },
   statLabel: {
     fontSize: 12,
-    color: colors.textSecondary,
     textAlign: 'center',
   },
   achievementsSection: {
@@ -290,11 +284,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    backgroundColor: colors.cardBackground,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   achievementIconContainer: {
     width: 48,
@@ -310,24 +302,20 @@ const styles = StyleSheet.create({
   achievementName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 4,
   },
   achievementDescription: {
     fontSize: 14,
-    color: colors.textSecondary,
   },
   summarySection: {
     paddingHorizontal: 24,
     marginBottom: 32,
   },
   summaryCard: {
-    backgroundColor: colors.cardBackground,
     borderRadius: 16,
     padding: 20,
     gap: 16,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -336,12 +324,10 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 14,
-    color: colors.textSecondary,
   },
   summaryValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.text,
   },
   motivationSection: {
     paddingHorizontal: 24,
@@ -350,12 +336,10 @@ const styles = StyleSheet.create({
   motivationTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 12,
   },
   motivationText: {
     fontSize: 14,
-    color: colors.textSecondary,
     lineHeight: 22,
   },
   footer: {
@@ -363,11 +347,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: colors.background,
     padding: 24,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
   },
   button: {
     width: '100%',

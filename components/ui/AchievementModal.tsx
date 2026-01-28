@@ -64,6 +64,7 @@ export function AchievementModal({ visible, achievement, onClose }: AchievementM
             styles.container,
             {
               transform: [{ scale: scaleAnim }],
+              backgroundColor: colors.surface,
             },
           ]}
         >
@@ -71,15 +72,15 @@ export function AchievementModal({ visible, achievement, onClose }: AchievementM
             <X size={24} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          <View style={styles.iconContainer}>
+          <View style={[styles.iconContainer, { backgroundColor: colors.primary + '20' }]}>
             <Trophy size={64} color={colors.primary} />
           </View>
 
-          <Text style={styles.title}>Achievement Unlocked!</Text>
-          <Text style={styles.achievementName}>{achievement.name}</Text>
-          <Text style={styles.description}>{achievement.description}</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Achievement Unlocked!</Text>
+          <Text style={[styles.achievementName, { color: colors.primary }]}>{achievement.name}</Text>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>{achievement.description}</Text>
 
-          <View style={styles.dayBadge}>
+          <View style={[styles.dayBadge, { backgroundColor: colors.primary }]}>
             <Text style={styles.dayText}>Day {achievement.day}</Text>
           </View>
         </Animated.View>
@@ -97,7 +98,6 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   container: {
-    backgroundColor: colors.cardBackground,
     borderRadius: 24,
     padding: 32,
     alignItems: 'center',
@@ -115,7 +115,6 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: colors.primary + '20',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -123,26 +122,22 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 8,
     textAlign: 'center',
   },
   achievementName: {
     fontSize: 24,
     fontWeight: '700',
-    color: colors.primary,
     marginBottom: 12,
     textAlign: 'center',
   },
   description: {
     fontSize: 14,
-    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 20,
   },
   dayBadge: {
-    backgroundColor: colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 12,

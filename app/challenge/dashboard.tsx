@@ -74,7 +74,7 @@ export default function ChallengeDashboardScreen() {
   const canPause = challengeData.pausedDays < challengeData.maxPauseDays;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <LinearGradient
         colors={[colors.primary + '20', 'transparent']}
         style={styles.headerGradient}
@@ -82,9 +82,9 @@ export default function ChallengeDashboardScreen() {
 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backText}>←</Text>
+          <Text style={[styles.backText, { color: colors.text }]}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>30-Day Challenge</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>30-Day Challenge</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -249,13 +249,11 @@ export default function ChallengeDashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background,
   },
   headerGradient: {
     position: 'absolute',
@@ -277,12 +275,10 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 24,
-    color: colors.text,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
   },
   placeholder: {
     width: 40,
@@ -311,11 +307,9 @@ const styles = StyleSheet.create({
   dayNumber: {
     fontSize: 40,
     fontWeight: '700',
-    color: colors.text,
   },
   dayLabel: {
     fontSize: 16,
-    color: colors.textSecondary,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -323,22 +317,18 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: colors.cardBackground,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   statValue: {
     fontSize: 20,
     fontWeight: '600',
-    color: colors.text,
   },
   statLabel: {
     fontSize: 12,
-    color: colors.textSecondary,
   },
   pausedBanner: {
     flexDirection: 'row',
@@ -358,30 +348,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    backgroundColor: colors.cardBackground,
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: colors.primary + '40',
   },
   milestoneContent: {
     flex: 1,
   },
   milestoneTitle: {
     fontSize: 12,
-    color: colors.textSecondary,
     marginBottom: 4,
   },
   milestoneName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 4,
   },
   milestoneDays: {
     fontSize: 14,
-    color: colors.primary,
   },
   todaySection: {
     marginBottom: 32,
@@ -389,35 +374,28 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 16,
   },
   restDayCard: {
-    backgroundColor: colors.cardBackground,
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
   },
   restDayTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 8,
   },
   restDayText: {
     fontSize: 14,
-    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },
   workoutCard: {
-    backgroundColor: colors.cardBackground,
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   workoutHeader: {
     flexDirection: 'row',
@@ -428,12 +406,10 @@ const styles = StyleSheet.create({
   workoutType: {
     fontSize: 20,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 4,
   },
   workoutDuration: {
     fontSize: 14,
-    color: colors.textSecondary,
   },
   completedBadge: {
     backgroundColor: '#D1FAE5',
@@ -451,12 +427,10 @@ const styles = StyleSheet.create({
   },
   workoutLabel: {
     fontSize: 12,
-    color: colors.textSecondary,
     marginBottom: 4,
   },
   workoutValue: {
     fontSize: 14,
-    color: colors.text,
   },
   startButton: {
     marginTop: 8,
@@ -471,17 +445,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    backgroundColor: colors.cardBackground,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   achievementIcon: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.primary + '20',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -491,12 +462,10 @@ const styles = StyleSheet.create({
   achievementName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 4,
   },
   achievementDescription: {
     fontSize: 14,
-    color: colors.textSecondary,
   },
   actionsSection: {
     gap: 12,
