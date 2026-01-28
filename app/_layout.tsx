@@ -40,12 +40,15 @@ function RootLayoutNav() {
   }
 
   return (
-    <>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Stack screenOptions={{
-          headerShown: false,
-          contentStyle: { paddingTop: insets.top }
-        }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* 👇 Top safe area + breathing room */}
+      <View style={{ height: insets.top + 16 }} />
+
+      <Stack
+        screenOptions={{
+          headerShown: false, // ❌ NO contentStyle here
+        }}
+      >
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="category/[id]" />
@@ -61,10 +64,10 @@ function RootLayoutNav() {
         />
         <Stack.Screen name="workout/complete" />
         <Stack.Screen name="+not-found" />
-        </Stack>
-      </View>
+      </Stack>
+
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
-    </>
+    </View>
   );
 }
 
