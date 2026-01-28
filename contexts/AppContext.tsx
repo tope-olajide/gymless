@@ -6,8 +6,16 @@ import {
   ChallengeData,
   WorkoutRecord,
   BodyPartHistory,
+  ChallengePlan,
+  ChallengeAchievement,
 } from '@/utils/storage';
 import { format, isToday, isYesterday, differenceInDays, parseISO } from 'date-fns';
+import { generateChallengePlan, getTodaysPlan } from '@/utils/challengeGenerator';
+import {
+  checkForMilestoneAchievement,
+  checkForStreakAchievement,
+  calculateConsecutiveDays,
+} from '@/utils/challengeAchievements';
 
 interface AppContextType {
   preferences: UserPreferences;
@@ -17,10 +25,16 @@ interface AppContextType {
   bodyPartHistory: BodyPartHistory;
   isOnboardingComplete: boolean;
   isLoading: boolean;
+  challengePlan: ChallengePlan | null;
+  challengeAchievements: ChallengeAchievement[];
   updatePreferences: (prefs: Partial<UserPreferences>) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   recordWorkout: (workout: Omit<WorkoutRecord, 'id' | 'completedAt'>) => Promise<void>;
-  startChallenge: () => Promise<void>;
+  startChallenge: (challengeType: 'strength' | 'consistency' | 'balanced', startDate?: string) => Promise<void>;
+  pauseChallenge: () => Promise<void>;
+  resumeChallenge: () => Promise<void>;
+  abandonChallenge: () => Promise<void>;
+  completeChallenge: () => Promise<void>;
   refreshData: () => Promise<void>;
 }
 
@@ -47,21 +61,31 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     currentDay: 0,
     completedDays: [],
     targetDays: 30,
+    challengeType: null,
+    pausedDays: 0,
+    maxPauseDays: 3,
+    isPaused: false,
+    completedAt: null,
+    abandonedAt: null,
   });
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutRecord[]>([]);
   const [bodyPartHistory, setBodyPartHistory] = useState<BodyPartHistory>({});
   const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [challengePlan, setChallengePlan] = useState<ChallengePlan | null>(null);
+  const [challengeAchievements, setChallengeAchievements] = useState<ChallengeAchievement[]>([]);
 
   const loadData = async () => {
     try {
-      const [prefs, streak, challenge, history, bodyParts, onboarding] = await Promise.all([
+      const [prefs, streak, challenge, history, bodyParts, onboarding, plan, achievements] = await Promise.all([
         storage.getUserPreferences(),
         storage.getStreakData(),
         storage.getChallengeData(),
         storage.getWorkoutHistory(),
         storage.getBodyPartHistory(),
         storage.isOnboardingComplete(),
+        storage.getChallengePlan(),
+        storage.getChallengeAchievements(),
       ]);
 
       setPreferences(prefs);
@@ -70,6 +94,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setWorkoutHistory(history);
       setBodyPartHistory(bodyParts);
       setIsOnboardingComplete(onboarding);
+      setChallengePlan(plan);
+      setChallengeAchievements(achievements);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -132,7 +158,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const updateChallenge = async (workoutDate: string) => {
     const currentData = await storage.getChallengeData();
 
-    if (!currentData.isActive) {
+    if (!currentData.isActive || currentData.isPaused) {
       return;
     }
 
@@ -153,6 +179,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     await storage.updateChallengeData(newChallengeData);
     setChallengeData(newChallengeData);
+
+    const milestoneAchievement = checkForMilestoneAchievement(newCompletedDays, newCurrentDay);
+    if (milestoneAchievement) {
+      await storage.addChallengeAchievement(milestoneAchievement);
+      setChallengeAchievements(prev => [...prev, milestoneAchievement]);
+    }
+
+    const consecutiveDays = calculateConsecutiveDays(newCompletedDays);
+    const existingAchievements = await storage.getChallengeAchievements();
+    const streakAchievement = checkForStreakAchievement(consecutiveDays, existingAchievements);
+    if (streakAchievement) {
+      await storage.addChallengeAchievement(streakAchievement);
+      setChallengeAchievements(prev => [...prev, streakAchievement]);
+    }
+
+    if (newCurrentDay === 30) {
+      await completeChallenge();
+    }
   };
 
   const recordWorkout = async (workout: Omit<WorkoutRecord, 'id' | 'completedAt'>) => {
@@ -177,18 +221,127 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await updateChallenge(format(now, 'yyyy-MM-dd'));
   };
 
-  const startChallenge = async () => {
-    const today = format(new Date(), 'yyyy-MM-dd');
+  const startChallenge = async (
+    challengeType: 'strength' | 'consistency' | 'balanced',
+    startDate?: string
+  ) => {
+    const start = startDate || format(new Date(), 'yyyy-MM-dd');
+
+    const plan = generateChallengePlan(challengeType, preferences.difficulty, start);
+    await storage.saveChallengePlan(plan);
+    setChallengePlan(plan);
+
     const newChallengeData: ChallengeData = {
       isActive: true,
-      startDate: today,
+      startDate: start,
       currentDay: 0,
       completedDays: [],
       targetDays: 30,
+      challengeType,
+      pausedDays: 0,
+      maxPauseDays: 3,
+      isPaused: false,
+      completedAt: null,
+      abandonedAt: null,
     };
 
     await storage.updateChallengeData(newChallengeData);
     setChallengeData(newChallengeData);
+
+    await storage.clearChallengeAchievements();
+    setChallengeAchievements([]);
+  };
+
+  const pauseChallenge = async () => {
+    const currentData = await storage.getChallengeData();
+
+    if (currentData.pausedDays >= currentData.maxPauseDays) {
+      return;
+    }
+
+    const newChallengeData: ChallengeData = {
+      ...currentData,
+      isPaused: true,
+      pausedDays: currentData.pausedDays + 1,
+    };
+
+    await storage.updateChallengeData(newChallengeData);
+    setChallengeData(newChallengeData);
+  };
+
+  const resumeChallenge = async () => {
+    const currentData = await storage.getChallengeData();
+
+    const newChallengeData: ChallengeData = {
+      ...currentData,
+      isPaused: false,
+    };
+
+    await storage.updateChallengeData(newChallengeData);
+    setChallengeData(newChallengeData);
+  };
+
+  const abandonChallenge = async () => {
+    const currentData = await storage.getChallengeData();
+    const achievements = await storage.getChallengeAchievements();
+
+    await storage.addChallengeToHistory({
+      id: `challenge_${Date.now()}`,
+      startDate: currentData.startDate || format(new Date(), 'yyyy-MM-dd'),
+      endDate: format(new Date(), 'yyyy-MM-dd'),
+      status: 'abandoned',
+      daysCompleted: currentData.completedDays.length,
+      totalDays: currentData.targetDays,
+      challengeType: currentData.challengeType || 'balanced',
+      achievements,
+    });
+
+    await storage.updateChallengeData({
+      isActive: false,
+      isPaused: false,
+      abandonedAt: new Date().toISOString(),
+    });
+
+    await storage.clearChallengePlan();
+    await storage.clearChallengeAchievements();
+
+    setChallengeData(prev => ({
+      ...prev,
+      isActive: false,
+      isPaused: false,
+      abandonedAt: new Date().toISOString(),
+    }));
+    setChallengePlan(null);
+    setChallengeAchievements([]);
+  };
+
+  const completeChallenge = async () => {
+    const currentData = await storage.getChallengeData();
+    const achievements = await storage.getChallengeAchievements();
+
+    await storage.addChallengeToHistory({
+      id: `challenge_${Date.now()}`,
+      startDate: currentData.startDate || format(new Date(), 'yyyy-MM-dd'),
+      endDate: format(new Date(), 'yyyy-MM-dd'),
+      status: 'completed',
+      daysCompleted: currentData.completedDays.length,
+      totalDays: currentData.targetDays,
+      challengeType: currentData.challengeType || 'balanced',
+      achievements,
+    });
+
+    await storage.updateChallengeData({
+      isActive: false,
+      isPaused: false,
+      completedAt: new Date().toISOString(),
+    });
+
+    setChallengeData(prev => ({
+      ...prev,
+      isActive: false,
+      isPaused: false,
+      completedAt: new Date().toISOString(),
+    }));
   };
 
   const refreshData = async () => {
@@ -206,10 +359,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         bodyPartHistory,
         isOnboardingComplete,
         isLoading,
+        challengePlan,
+        challengeAchievements,
         updatePreferences,
         completeOnboarding,
         recordWorkout,
         startChallenge,
+        pauseChallenge,
+        resumeChallenge,
+        abandonChallenge,
+        completeChallenge,
         refreshData,
       }}
     >

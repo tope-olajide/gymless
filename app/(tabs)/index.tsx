@@ -148,7 +148,7 @@ export default function HomeScreen() {
         </View>
 
         {challengeData.isActive ? (
-          <Card style={styles.challengeCard} onPress={() => router.push('/challenge/poster')}>
+          <Card style={styles.challengeCard} onPress={() => router.push('/challenge/dashboard')}>
             <LinearGradient
               colors={[colors.primary, colors.primaryDark]}
               start={{ x: 0, y: 0 }}
@@ -204,7 +204,7 @@ export default function HomeScreen() {
             </LinearGradient>
           </Card>
         ) : (
-          <Card style={styles.promoCard} onPress={() => router.push('/challenge/poster')}>
+          <Card style={styles.promoCard} onPress={() => router.push('/challenge/setup')}>
             <LinearGradient
               colors={[colors.secondary, colors.primaryDark]}
               start={{ x: 0, y: 0 }}
@@ -218,7 +218,7 @@ export default function HomeScreen() {
                   Transform your body in just one month
                 </Text>
                 <View style={styles.promoButton}>
-                  <Text style={styles.promoButtonText}>Learn More</Text>
+                  <Text style={styles.promoButtonText}>Start Challenge</Text>
                   <ChevronRight size={16} color="#FFFFFF" />
                 </View>
               </View>

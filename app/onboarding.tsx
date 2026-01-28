@@ -56,13 +56,11 @@ export default function OnboardingScreen() {
       goal,
     });
     await completeOnboarding();
-    await startChallenge();
     router.replace('/(tabs)');
   };
 
   const handleSkip = async () => {
     await completeOnboarding();
-    await startChallenge();
     router.replace('/(tabs)');
   };
 

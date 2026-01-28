@@ -23,18 +23,35 @@ import { generateWorkout } from '@/utils/workoutGenerator';
 import { Difficulty, GeneratedWorkout } from '@/types/exercise';
 
 export default function ConfigureWorkoutScreen() {
-  const params = useLocalSearchParams<{ muscleGroups?: string; duration?: string }>();
+  const params = useLocalSearchParams<{
+    muscleGroups?: string;
+    duration?: string;
+    fromChallenge?: string;
+    challengeDay?: string;
+  }>();
   const router = useRouter();
   const { colors } = useTheme();
-  const { preferences } = useApp();
+  const { preferences, challengePlan } = useApp();
 
-  const initialMuscleGroups = params.muscleGroups?.split(',') || [];
-  const initialDuration = params.duration
+  const isFromChallenge = params.fromChallenge === 'true';
+  const challengeDay = params.challengeDay ? parseInt(params.challengeDay) : null;
+
+  const todaysPlan = useMemo(() => {
+    if (isFromChallenge && challengePlan && challengeDay) {
+      return challengePlan.dailyPlans.find(p => p.day === challengeDay);
+    }
+    return null;
+  }, [isFromChallenge, challengePlan, challengeDay]);
+
+  const initialMuscleGroups = todaysPlan?.bodyParts || params.muscleGroups?.split(',') || [];
+  const initialDuration = todaysPlan?.duration
+    ? (todaysPlan.duration as 5 | 10 | 15 | 20)
+    : params.duration
     ? (parseInt(params.duration) as 5 | 10 | 15 | 20)
     : preferences.preferredDuration;
 
   const [duration, setDuration] = useState<5 | 10 | 15 | 20>(initialDuration);
-  const [difficulty, setDifficulty] = useState<Difficulty>(preferences.difficulty);
+  const [difficulty, setDifficulty] = useState<Difficulty>(todaysPlan?.difficulty || preferences.difficulty);
   const [workout, setWorkout] = useState<GeneratedWorkout | null>(null);
   const [regenerateKey, setRegenerateKey] = useState(0);
 
@@ -65,7 +82,11 @@ export default function ConfigureWorkoutScreen() {
 
     router.push({
       pathname: '/workout/session',
-      params: { workoutId: workout.id, workoutData: JSON.stringify(workout) },
+      params: {
+        workoutId: workout.id,
+        workoutData: JSON.stringify(workout),
+        fromChallenge: isFromChallenge ? 'true' : 'false',
+      },
     });
   };
 

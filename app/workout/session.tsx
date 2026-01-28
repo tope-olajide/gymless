@@ -32,7 +32,10 @@ interface CurrentExerciseData {
 }
 
 export default function WorkoutSessionScreen() {
-  const { workoutData } = useLocalSearchParams<{ workoutData: string }>();
+  const { workoutData, fromChallenge } = useLocalSearchParams<{
+    workoutData: string;
+    fromChallenge?: string;
+  }>();
   const router = useRouter();
   const { colors } = useTheme();
 
@@ -120,6 +123,7 @@ export default function WorkoutSessionScreen() {
       params: {
         workoutData: workoutData,
         duration: Math.ceil(totalElapsed / 60).toString(),
+        fromChallenge: fromChallenge || 'false',
       },
     });
   };

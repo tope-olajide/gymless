@@ -17,13 +17,14 @@ import { GeneratedWorkout } from '@/types/exercise';
 import { muscleGroups } from '@/data/bodyParts';
 
 export default function WorkoutCompleteScreen() {
-  const { workoutData, duration } = useLocalSearchParams<{
+  const { workoutData, duration, fromChallenge } = useLocalSearchParams<{
     workoutData: string;
     duration: string;
+    fromChallenge?: string;
   }>();
   const router = useRouter();
   const { colors } = useTheme();
-  const { recordWorkout, streakData, challengeData } = useApp();
+  const { recordWorkout, streakData, challengeData, challengeAchievements } = useApp();
 
   const workout: GeneratedWorkout = JSON.parse(workoutData || '{}');
   const actualDuration = parseInt(duration || '0');
@@ -39,6 +40,12 @@ export default function WorkoutCompleteScreen() {
         exercises: workout.exercises.map(e => e.exerciseId),
         duration: actualDuration,
       });
+
+      if (fromChallenge === 'true' && challengeData.currentDay >= 30) {
+        setTimeout(() => {
+          router.replace('/challenge/complete');
+        }, 2000);
+      }
     };
 
     saveWorkout();
