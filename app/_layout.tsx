@@ -41,7 +41,11 @@ function RootLayoutNav() {
 
   return (
     <>
-      <Stack screenOptions={{ headerShown: false }} />
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <Stack screenOptions={{
+          headerShown: false,
+          contentStyle: { paddingTop: insets.top }
+        }}>
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="category/[id]" />
@@ -57,7 +61,8 @@ function RootLayoutNav() {
         />
         <Stack.Screen name="workout/complete" />
         <Stack.Screen name="+not-found" />
-      </Stack>
+        </Stack>
+      </View>
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
     </>
   );
