@@ -147,8 +147,8 @@ export default function HomeScreen() {
           <StreakBadge streak={streakData.currentStreak} size="medium" />
         </View>
 
-        {challengeData.isActive && (
-          <Card style={styles.challengeCard}>
+        {challengeData.isActive ? (
+          <Card style={styles.challengeCard} onPress={() => router.push('/challenge/poster')}>
             <LinearGradient
               colors={[colors.primary, colors.primaryDark]}
               start={{ x: 0, y: 0 }}
@@ -200,6 +200,27 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 ))}
+              </View>
+            </LinearGradient>
+          </Card>
+        ) : (
+          <Card style={styles.promoCard} onPress={() => router.push('/challenge/poster')}>
+            <LinearGradient
+              colors={[colors.secondary, colors.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.promoGradient}
+            >
+              <View style={styles.promoContent}>
+                <Trophy size={32} color="#FFFFFF" />
+                <Text style={styles.promoTitle}>Join the 30-Day Challenge</Text>
+                <Text style={styles.promoSubtitle}>
+                  Transform your body in just one month
+                </Text>
+                <View style={styles.promoButton}>
+                  <Text style={styles.promoButtonText}>Learn More</Text>
+                  <ChevronRight size={16} color="#FFFFFF" />
+                </View>
               </View>
             </LinearGradient>
           </Card>
@@ -520,5 +541,44 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: Spacing.xxl,
+  },
+  promoCard: {
+    padding: 0,
+    overflow: 'hidden',
+    marginBottom: Spacing.lg,
+  },
+  promoGradient: {
+    padding: Spacing.xl,
+  },
+  promoContent: {
+    alignItems: 'center',
+  },
+  promoTitle: {
+    fontSize: FontSizes.xl,
+    fontWeight: FontWeights.bold,
+    color: '#FFFFFF',
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
+  promoSubtitle: {
+    fontSize: FontSizes.md,
+    color: 'rgba(255,255,255,0.9)',
+    marginTop: Spacing.xs,
+    textAlign: 'center',
+  },
+  promoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    marginTop: Spacing.lg,
+  },
+  promoButtonText: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
+    color: '#FFFFFF',
   },
 });
