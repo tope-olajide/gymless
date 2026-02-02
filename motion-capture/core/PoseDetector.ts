@@ -7,14 +7,6 @@ import {
 
 let MediaPipePose: any = null;
 
-if (Platform.OS !== 'web') {
-  try {
-    MediaPipePose = require('@gymbrosinc/react-native-mediapipe-pose');
-  } catch (error) {
-    console.warn('Native MediaPipe not available:', error);
-  }
-}
-
 export interface CameraFrame {
   width: number;
   height: number;
@@ -46,28 +38,17 @@ export class PoseDetector {
     try {
       if (Platform.OS === 'web') {
         console.warn(
-          'Native MediaPipe not available on web. Motion capture disabled.'
+          'Pose detection not available on web. Motion capture disabled.'
         );
         this.isInitializing = false;
         return false;
       }
 
-      if (!MediaPipePose) {
-        throw new Error('MediaPipe module not loaded');
-      }
-
-      this.detector = await MediaPipePose.createPoseDetector({
-        modelComplexity: 1,
-        smoothLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
-
-      this.isInitialized = true;
+      console.warn(
+        'Native pose detection requires component-based integration. Programmatic pose detection is not currently supported.'
+      );
       this.isInitializing = false;
-
-      console.log('Native MediaPipe pose detector initialized successfully');
-      return true;
+      return false;
     } catch (error) {
       console.error('Failed to initialize pose detector:', error);
       this.isInitializing = false;
