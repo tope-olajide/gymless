@@ -17,7 +17,8 @@
     "android": {
       "permissions": [
         "CAMERA"
-      ]
+      ],
+      "package": "com.theatomicshift.gymless"
     },
     "web": {
       "bundler": "metro",
