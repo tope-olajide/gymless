@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FormAnalytics, MotionCaptureSettings } from '@/types/motion-capture';
 
 const STORAGE_KEYS = {
   USER_PREFERENCES: 'gymless_user_preferences',
@@ -11,6 +12,8 @@ const STORAGE_KEYS = {
   CHALLENGE_ACHIEVEMENTS: 'gymless_challenge_achievements',
   CHALLENGE_NOTES: 'gymless_challenge_notes',
   CHALLENGE_HISTORY: 'gymless_challenge_history',
+  FORM_ANALYTICS: 'gymless_form_analytics',
+  MOTION_CAPTURE_SETTINGS: 'gymless_motion_capture_settings',
 };
 
 export interface UserPreferences {
@@ -372,6 +375,75 @@ export const storage = {
       await AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
     } catch (error) {
       console.error('Error resetting data:', error);
+    }
+  },
+
+  async getFormAnalytics(): Promise<FormAnalytics[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.FORM_ANALYTICS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async addFormAnalytics(analytics: FormAnalytics): Promise<void> {
+    try {
+      const history = await this.getFormAnalytics();
+      history.unshift(analytics);
+
+      if (history.length > 100) {
+        history.length = 100;
+      }
+
+      await AsyncStorage.setItem(STORAGE_KEYS.FORM_ANALYTICS, JSON.stringify(history));
+    } catch (error) {
+      console.error('Error saving form analytics:', error);
+    }
+  },
+
+  async getFormProgressForExercise(
+    exerciseId: string,
+    limit: number = 30
+  ): Promise<FormAnalytics[]> {
+    const analytics = await this.getFormAnalytics();
+    return analytics.filter((a) => a.exerciseId === exerciseId).slice(0, limit);
+  },
+
+  async getMotionCaptureSettings(): Promise<MotionCaptureSettings> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.MOTION_CAPTURE_SETTINGS);
+      return data
+        ? JSON.parse(data)
+        : {
+            enabled: true,
+            showSkeleton: true,
+            showAlignmentGuides: true,
+            audioCoaching: false,
+            hapticFeedback: true,
+            cameraPosition: 'side',
+          };
+    } catch {
+      return {
+        enabled: true,
+        showSkeleton: true,
+        showAlignmentGuides: true,
+        audioCoaching: false,
+        hapticFeedback: true,
+        cameraPosition: 'side',
+      };
+    }
+  },
+
+  async saveMotionCaptureSettings(settings: Partial<MotionCaptureSettings>): Promise<void> {
+    try {
+      const current = await this.getMotionCaptureSettings();
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.MOTION_CAPTURE_SETTINGS,
+        JSON.stringify({ ...current, ...settings })
+      );
+    } catch (error) {
+      console.error('Error saving motion capture settings:', error);
     }
   },
 };
