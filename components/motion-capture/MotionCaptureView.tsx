@@ -1,13 +1,15 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { PoseFrame } from '@/types/motion-capture';
+import { PoseDetector, CameraFrame } from '@/motion-capture/core/PoseDetector';
 
 interface MotionCaptureViewProps {
   onPoseDetected?: (pose: PoseFrame) => void;
   showSkeleton?: boolean;
   facing?: CameraType;
   style?: any;
+  enabled?: boolean;
 }
 
 export function MotionCaptureView({
@@ -15,9 +17,11 @@ export function MotionCaptureView({
   showSkeleton = true,
   facing = 'front',
   style,
+  enabled = true,
 }: MotionCaptureViewProps) {
   const [permission, requestPermission] = useCameraPermissions();
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const detectorRef = useRef<PoseDetector | null>(null);
+  const [isDetectorReady, setIsDetectorReady] = useState(false);
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -26,30 +30,57 @@ export function MotionCaptureView({
   }, [permission]);
 
   useEffect(() => {
-    if (Platform.OS === 'web' && videoRef.current) {
-      startWebcam();
+    if (enabled && Platform.OS !== 'web') {
+      initializeDetector();
     }
-  }, []);
 
-  const startWebcam = async () => {
-    if (Platform.OS !== 'web') return;
+    return () => {
+      cleanupDetector();
+    };
+  }, [enabled]);
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: 640,
-          height: 480,
-          facingMode: facing === 'front' ? 'user' : 'environment',
-        },
-      });
+  const initializeDetector = async () => {
+    if (detectorRef.current) return;
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (error) {
-      console.error('Error accessing webcam:', error);
+    const detector = new PoseDetector();
+    const success = await detector.initialize();
+
+    if (success) {
+      detectorRef.current = detector;
+      setIsDetectorReady(true);
     }
   };
+
+  const cleanupDetector = async () => {
+    if (detectorRef.current) {
+      await detectorRef.current.dispose();
+      detectorRef.current = null;
+      setIsDetectorReady(false);
+    }
+  };
+
+  const handleFrame = useCallback(async (frame: any) => {
+    if (!enabled || !isDetectorReady || !detectorRef.current || !onPoseDetected) {
+      return;
+    }
+
+    try {
+      const cameraFrame: CameraFrame = {
+        width: frame.width || 640,
+        height: frame.height || 480,
+        data: frame,
+        timestamp: Date.now(),
+      };
+
+      const pose = await detectorRef.current.detectPose(cameraFrame);
+
+      if (pose) {
+        onPoseDetected(pose);
+      }
+    } catch (error) {
+      console.error('Error processing frame:', error);
+    }
+  }, [enabled, isDetectorReady, onPoseDetected]);
 
   if (!permission?.granted) {
     return <View style={[styles.container, style]} />;
@@ -58,24 +89,17 @@ export function MotionCaptureView({
   if (Platform.OS === 'web') {
     return (
       <View style={[styles.container, style]}>
-        <video
-          ref={videoRef}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-          }}
-          autoPlay
-          playsInline
-          muted
-        />
+        <View style={styles.webPlaceholder} />
       </View>
     );
   }
 
   return (
     <View style={[styles.container, style]}>
-      <CameraView style={styles.camera} facing={facing} />
+      <CameraView
+        style={styles.camera}
+        facing={facing}
+      />
     </View>
   );
 }
@@ -87,5 +111,9 @@ const styles = StyleSheet.create({
   },
   camera: {
     flex: 1,
+  },
+  webPlaceholder: {
+    flex: 1,
+    backgroundColor: '#1a1a1a',
   },
 });

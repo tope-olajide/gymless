@@ -26,10 +26,10 @@ export class MotionCaptureEngine {
   private geminiClient: GeminiClient;
   private config: MotionCaptureConfig;
   private isRunning: boolean = false;
-  private animationFrameId: number | null = null;
-  private videoElement: HTMLVideoElement | null = null;
   private lastPoseFrame: PoseFrame | null = null;
   private analytics: Partial<FormAnalytics> = {};
+  private lastGeminiCallTime: number = 0;
+  private geminiCallDebounceMs: number = 3000;
 
   constructor(config: MotionCaptureConfig) {
     this.config = config;
@@ -60,50 +60,41 @@ export class MotionCaptureEngine {
     }
   }
 
-  async start(videoElement: HTMLVideoElement): Promise<void> {
+  start(): void {
     if (this.isRunning) {
       console.warn('Motion capture already running');
       return;
     }
 
-    this.videoElement = videoElement;
     this.isRunning = true;
     this.analytics.repScores = [];
     this.analytics.coachingCues = [];
-
-    this.processFrame();
   }
 
   stop(): void {
     this.isRunning = false;
-
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-
-    this.videoElement = null;
   }
 
-  private async processFrame(): Promise<void> {
-    if (!this.isRunning || !this.videoElement) {
+  async processPoseFrame(poseFrame: PoseFrame): Promise<void> {
+    if (!this.isRunning) {
       return;
     }
 
     try {
-      const poseFrame = await this.poseDetector.detectPose(this.videoElement);
+      this.lastPoseFrame = poseFrame;
 
-      if (poseFrame) {
-        this.lastPoseFrame = poseFrame;
+      const repState = this.repCounter.analyze(poseFrame);
+      const formMetrics = this.formScorer.evaluate(poseFrame);
 
-        const repState = this.repCounter.analyze(poseFrame);
-        const formMetrics = this.formScorer.evaluate(poseFrame);
+      if (this.config.onFormUpdate) {
+        this.config.onFormUpdate(formMetrics);
+      }
 
-        if (this.config.onFormUpdate) {
-          this.config.onFormUpdate(formMetrics);
-        }
+      this.recordRepScore(repState, formMetrics);
 
-        this.recordRepScore(repState, formMetrics);
+      const now = Date.now();
+      if (now - this.lastGeminiCallTime >= this.geminiCallDebounceMs) {
+        this.lastGeminiCallTime = now;
 
         const coachingCue = await this.geminiClient.getCoachingFeedback(
           this.config.exerciseDefinition.movementPattern,
@@ -122,10 +113,6 @@ export class MotionCaptureEngine {
       }
     } catch (error) {
       console.error('Frame processing error:', error);
-    }
-
-    if (this.isRunning) {
-      this.animationFrameId = requestAnimationFrame(() => this.processFrame());
     }
   }
 

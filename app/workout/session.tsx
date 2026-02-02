@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Animated,
   Alert,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -23,6 +24,11 @@ import { Button } from '@/components/ui/Button';
 import { BorderRadius, FontSizes, FontWeights, Spacing } from '@/constants/theme';
 import { getExerciseById } from '@/data/exercises';
 import { GeneratedWorkout, WorkoutExercise, Exercise } from '@/types/exercise';
+import { AICoachToggle } from '@/components/workout/AICoachToggle';
+import { CoachingCueToast } from '@/components/workout/CoachingCueToast';
+import { MotionCaptureView } from '@/components/motion-capture/MotionCaptureView';
+import { useMotionCapture } from '@/hooks/useMotionCapture';
+import { CoachingCue, PoseFrame } from '@/types/motion-capture';
 
 type SessionPhase = 'exercise' | 'rest' | 'complete';
 
@@ -47,6 +53,8 @@ export default function WorkoutSessionScreen() {
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [totalElapsed, setTotalElapsed] = useState(0);
+  const [aiCoachEnabled, setAiCoachEnabled] = useState(false);
+  const [currentCoachingCue, setCurrentCoachingCue] = useState<CoachingCue | null>(null);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -65,12 +73,65 @@ export default function WorkoutSessionScreen() {
   const completedExercises = currentIndex;
   const overallProgress = (completedExercises / totalExercises) * 100;
 
+  const isMotionCaptureSupported =
+    Platform.OS !== 'web' &&
+    currentExercise?.poseDetection?.supported === true &&
+    phase === 'exercise';
+
+  const { start, stop, processPose, isInitialized } = useMotionCapture(
+    currentExercise?.id || '',
+    {
+      onRepComplete: (count) => {
+        console.log('Rep completed:', count);
+      },
+      onCoachingCue: (cue) => {
+        setCurrentCoachingCue(cue);
+      },
+      onFormUpdate: (metrics) => {
+        console.log('Form metrics:', metrics);
+      },
+    }
+  );
+
+  const handlePoseDetected = useCallback(
+    (pose: PoseFrame) => {
+      if (aiCoachEnabled && phase === 'exercise') {
+        processPose(pose);
+      }
+    },
+    [aiCoachEnabled, phase, processPose]
+  );
+
+  const handleAICoachToggle = useCallback(
+    (enabled: boolean) => {
+      setAiCoachEnabled(enabled);
+
+      if (enabled) {
+        start();
+      } else {
+        stop();
+      }
+    },
+    [start, stop]
+  );
+
+  const dismissCoachingCue = useCallback(() => {
+    setCurrentCoachingCue(null);
+  }, []);
+
   useEffect(() => {
     if (currentWorkoutExercise) {
       setTimeRemaining(currentWorkoutExercise.duration);
       setPhase('exercise');
     }
   }, [currentIndex]);
+
+  useEffect(() => {
+    if (phase === 'rest' || phase === 'complete') {
+      setAiCoachEnabled(false);
+      stop();
+    }
+  }, [phase, stop]);
 
   useEffect(() => {
     if (isPaused || phase === 'complete') {
@@ -207,9 +268,29 @@ export default function WorkoutSessionScreen() {
             {completedExercises + 1} / {totalExercises}
           </Text>
         </View>
+        {isMotionCaptureSupported && (
+          <AICoachToggle
+            exerciseId={currentExercise?.id || ''}
+            enabled={aiCoachEnabled}
+            onToggle={handleAICoachToggle}
+            isSupported={isMotionCaptureSupported}
+            isInitializing={aiCoachEnabled && !isInitialized}
+          />
+        )}
       </View>
 
       <View style={styles.content}>
+        {aiCoachEnabled && phase === 'exercise' && (
+          <View style={styles.cameraOverlay}>
+            <MotionCaptureView
+              onPoseDetected={handlePoseDetected}
+              showSkeleton={true}
+              facing="front"
+              enabled={aiCoachEnabled}
+              style={styles.camera}
+            />
+          </View>
+        )}
         {phase === 'rest' ? (
           <View style={styles.restContainer}>
             <Text style={[styles.restLabel, { color: colors.textSecondary }]}>
@@ -320,6 +401,10 @@ export default function WorkoutSessionScreen() {
           </Text>
           <ChevronRight size={16} color={colors.textTertiary} />
         </View>
+      )}
+
+      {currentCoachingCue && (
+        <CoachingCueToast cue={currentCoachingCue} onDismiss={dismissCoachingCue} />
       )}
     </SafeAreaView>
   );
@@ -480,5 +565,17 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.lg,
     textAlign: 'center',
     marginTop: 100,
+  },
+  cameraOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0.4,
+    zIndex: -1,
+  },
+  camera: {
+    flex: 1,
   },
 });
