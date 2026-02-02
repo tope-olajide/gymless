@@ -1,0 +1,196 @@
+import { PoseDetector } from './PoseDetector';
+import { RepCounter } from './RepCounter';
+import { FormScorer } from './FormScorer';
+import { GeminiClient } from './GeminiClient';
+import {
+  PoseFrame,
+  RepState,
+  FormMetrics,
+  CoachingCue,
+  ExerciseMotionCapture,
+  FormAnalytics,
+} from '@/types/motion-capture';
+
+export interface MotionCaptureConfig {
+  exerciseDefinition: ExerciseMotionCapture;
+  geminiApiKey: string;
+  onRepComplete?: (count: number) => void;
+  onCoachingCue?: (cue: CoachingCue) => void;
+  onFormUpdate?: (metrics: FormMetrics) => void;
+}
+
+export class MotionCaptureEngine {
+  private poseDetector: PoseDetector;
+  private repCounter: RepCounter;
+  private formScorer: FormScorer;
+  private geminiClient: GeminiClient;
+  private config: MotionCaptureConfig;
+  private isRunning: boolean = false;
+  private animationFrameId: number | null = null;
+  private videoElement: HTMLVideoElement | null = null;
+  private lastPoseFrame: PoseFrame | null = null;
+  private analytics: Partial<FormAnalytics> = {};
+
+  constructor(config: MotionCaptureConfig) {
+    this.config = config;
+    this.poseDetector = new PoseDetector();
+    this.repCounter = new RepCounter(config.exerciseDefinition.repCounting);
+    this.formScorer = new FormScorer(config.exerciseDefinition);
+    this.geminiClient = new GeminiClient(config.geminiApiKey);
+
+    if (config.onRepComplete) {
+      this.repCounter.onRepComplete(config.onRepComplete);
+    }
+
+    this.analytics = {
+      totalReps: 0,
+      validReps: 0,
+      repScores: [],
+      coachingCues: [],
+    };
+  }
+
+  async initialize(): Promise<boolean> {
+    try {
+      const success = await this.poseDetector.initialize();
+      return success;
+    } catch (error) {
+      console.error('Failed to initialize motion capture:', error);
+      return false;
+    }
+  }
+
+  async start(videoElement: HTMLVideoElement): Promise<void> {
+    if (this.isRunning) {
+      console.warn('Motion capture already running');
+      return;
+    }
+
+    this.videoElement = videoElement;
+    this.isRunning = true;
+    this.analytics.repScores = [];
+    this.analytics.coachingCues = [];
+
+    this.processFrame();
+  }
+
+  stop(): void {
+    this.isRunning = false;
+
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    this.videoElement = null;
+  }
+
+  private async processFrame(): Promise<void> {
+    if (!this.isRunning || !this.videoElement) {
+      return;
+    }
+
+    try {
+      const poseFrame = await this.poseDetector.detectPose(this.videoElement);
+
+      if (poseFrame) {
+        this.lastPoseFrame = poseFrame;
+
+        const repState = this.repCounter.analyze(poseFrame);
+        const formMetrics = this.formScorer.evaluate(poseFrame);
+
+        if (this.config.onFormUpdate) {
+          this.config.onFormUpdate(formMetrics);
+        }
+
+        this.recordRepScore(repState, formMetrics);
+
+        const coachingCue = await this.geminiClient.getCoachingFeedback(
+          this.config.exerciseDefinition.movementPattern,
+          formMetrics,
+          repState
+        );
+
+        if (coachingCue && this.config.onCoachingCue) {
+          this.config.onCoachingCue(coachingCue);
+          this.analytics.coachingCues?.push({
+            timestamp: coachingCue.timestamp,
+            message: coachingCue.message,
+            type: coachingCue.type,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Frame processing error:', error);
+    }
+
+    if (this.isRunning) {
+      this.animationFrameId = requestAnimationFrame(() => this.processFrame());
+    }
+  }
+
+  private recordRepScore(repState: RepState, formMetrics: FormMetrics): void {
+    const currentCount = repState.count;
+
+    if (currentCount > (this.analytics.totalReps || 0)) {
+      this.analytics.totalReps = currentCount;
+
+      if (formMetrics.score >= 70) {
+        this.analytics.validReps = (this.analytics.validReps || 0) + 1;
+      }
+
+      this.analytics.repScores?.push({
+        repNumber: currentCount,
+        formScore: formMetrics.score,
+        violations: formMetrics.violations.map((v) => v.message),
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  getLastPoseFrame(): PoseFrame | null {
+    return this.lastPoseFrame;
+  }
+
+  getRepCount(): number {
+    return this.repCounter.getCount();
+  }
+
+  getCurrentPhase(): 'idle' | 'descending' | 'bottom' | 'ascending' {
+    return this.repCounter.getCurrentPhase();
+  }
+
+  getAverageFormScore(): number {
+    return this.formScorer.getAverageScore();
+  }
+
+  getAnalytics(): Partial<FormAnalytics> {
+    const avgScore = this.formScorer.getAverageScore();
+
+    return {
+      ...this.analytics,
+      avgFormScore: avgScore,
+      peakFormScore: Math.max(...(this.analytics.repScores?.map((r) => r.formScore) || [0])),
+    };
+  }
+
+  reset(): void {
+    this.repCounter.reset();
+    this.formScorer.reset();
+    this.analytics = {
+      totalReps: 0,
+      validReps: 0,
+      repScores: [],
+      coachingCues: [],
+    };
+  }
+
+  async dispose(): Promise<void> {
+    this.stop();
+    await this.poseDetector.dispose();
+  }
+
+  isReady(): boolean {
+    return this.poseDetector.isReady();
+  }
+}
