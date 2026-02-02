@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { MotionCaptureEngine } from '@/motion-capture/core/MotionCaptureEngine';
 import { getExerciseDefinition } from '@/motion-capture/definitions/exerciseDefinitions';
@@ -7,43 +7,35 @@ import {
   FormMetrics,
   ExerciseMotionCapture,
   FormAnalytics,
+  PoseFrame,
 } from '@/types/motion-capture';
 import { storage } from '@/utils/storage';
 import * as Haptics from 'expo-haptics';
 
 interface UseMotionCaptureOptions {
-  exerciseId: string;
-  exerciseName: string;
-  enabled?: boolean;
-  workoutId?: string;
   onRepComplete?: (count: number) => void;
+  onCoachingCue?: (cue: CoachingCue) => void;
+  onFormUpdate?: (metrics: FormMetrics) => void;
 }
 
-export function useMotionCapture({
-  exerciseId,
-  exerciseName,
-  enabled = true,
-  workoutId = '',
-  onRepComplete,
-}: UseMotionCaptureOptions) {
+export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOptions = {}) {
+  const { onRepComplete, onCoachingCue, onFormUpdate } = options;
+
   const [isInitialized, setIsInitialized] = useState(false);
   const [isActive, setIsActive] = useState(false);
-  const [repCount, setRepCount] = useState(0);
-  const [formScore, setFormScore] = useState(100);
-  const [currentCue, setCurrentCue] = useState<CoachingCue | null>(null);
   const [definition, setDefinition] = useState<ExerciseMotionCapture | null>(null);
-  const [formMetrics, setFormMetrics] = useState<FormMetrics | null>(null);
 
   const engineRef = useRef<MotionCaptureEngine | null>(null);
-  const videoElementRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!exerciseId) return;
 
     const exerciseDef = getExerciseDefinition(exerciseId);
 
     if (!exerciseDef || !exerciseDef.supported) {
       console.log(`Motion capture not supported for exercise: ${exerciseId}`);
+      setDefinition(null);
+      setIsInitialized(false);
       return;
     }
 
@@ -51,27 +43,40 @@ export function useMotionCapture({
     initializeEngine(exerciseDef);
 
     return () => {
-      stopCapture();
+      stop();
       engineRef.current?.dispose();
     };
-  }, [exerciseId, enabled]);
+  }, [exerciseId]);
 
   const initializeEngine = async (exerciseDef: ExerciseMotionCapture) => {
     try {
       const settings = await storage.getMotionCaptureSettings();
 
       if (!settings.enabled) {
+        setIsInitialized(false);
         return;
       }
 
-      const geminiApiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || 'your-api-key-here';
+      const geminiApiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+
+      if (!geminiApiKey) {
+        console.warn('Gemini API key not found');
+      }
 
       const engine = new MotionCaptureEngine({
         exerciseDefinition: exerciseDef,
         geminiApiKey,
-        onRepComplete: handleRepComplete,
-        onCoachingCue: handleCoachingCue,
-        onFormUpdate: handleFormUpdate,
+        onRepComplete: (count) => {
+          handleHapticFeedback('rep');
+          onRepComplete?.(count);
+        },
+        onCoachingCue: (cue) => {
+          handleHapticFeedback(cue.urgency);
+          onCoachingCue?.(cue);
+        },
+        onFormUpdate: (metrics) => {
+          onFormUpdate?.(metrics);
+        },
       });
 
       const success = await engine.initialize();
@@ -80,123 +85,68 @@ export function useMotionCapture({
         engineRef.current = engine;
         setIsInitialized(true);
         console.log('Motion capture engine initialized');
+      } else {
+        setIsInitialized(false);
       }
     } catch (error) {
       console.error('Failed to initialize motion capture:', error);
+      setIsInitialized(false);
     }
   };
 
-  const startCapture = (videoElement?: HTMLVideoElement) => {
+  const handleHapticFeedback = async (type: 'rep' | 'critical' | 'high' | 'normal') => {
+    if (Platform.OS === 'web') return;
+
+    try {
+      const settings = await storage.getMotionCaptureSettings();
+      if (!settings.hapticFeedback) return;
+
+      switch (type) {
+        case 'rep':
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          break;
+        case 'critical':
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          break;
+        case 'high':
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          break;
+      }
+    } catch (error) {
+      console.error('Haptic feedback error:', error);
+    }
+  };
+
+  const start = useCallback(() => {
     if (!engineRef.current || !isInitialized) {
       console.warn('Engine not initialized');
       return;
     }
 
-    if (Platform.OS === 'web' && videoElement) {
-      videoElementRef.current = videoElement;
-    }
-
-    const element =
-      Platform.OS === 'web' && videoElementRef.current
-        ? videoElementRef.current
-        : document.createElement('video');
-
-    engineRef.current.start(element);
+    engineRef.current.start();
     setIsActive(true);
-  };
+  }, [isInitialized]);
 
-  const stopCapture = () => {
+  const stop = useCallback(() => {
     if (!engineRef.current) return;
 
     engineRef.current.stop();
     setIsActive(false);
+  }, []);
 
-    saveAnalytics();
-  };
+  const processPose = useCallback(async (pose: PoseFrame) => {
+    if (!engineRef.current || !isActive) return;
 
-  const handleRepComplete = async (count: number) => {
-    setRepCount(count);
-
-    const settings = await storage.getMotionCaptureSettings();
-
-    if (settings.hapticFeedback && Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-
-    if (onRepComplete) {
-      onRepComplete(count);
-    }
-  };
-
-  const handleCoachingCue = async (cue: CoachingCue) => {
-    setCurrentCue(cue);
-
-    const settings = await storage.getMotionCaptureSettings();
-
-    if (settings.hapticFeedback && Platform.OS !== 'web') {
-      if (cue.urgency === 'critical') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      } else if (cue.urgency === 'high') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      }
-    }
-  };
-
-  const handleFormUpdate = (metrics: FormMetrics) => {
-    setFormScore(metrics.score);
-    setFormMetrics(metrics);
-  };
-
-  const saveAnalytics = async () => {
-    if (!engineRef.current || repCount === 0) return;
-
-    try {
-      const analytics = engineRef.current.getAnalytics();
-
-      const formAnalytics: FormAnalytics = {
-        exerciseId,
-        workoutId,
-        date: new Date().toISOString(),
-        totalReps: analytics.totalReps || 0,
-        validReps: analytics.validReps || 0,
-        avgFormScore: analytics.avgFormScore || 0,
-        peakFormScore: analytics.peakFormScore || 0,
-        fatigueOnset: null,
-        repScores: analytics.repScores || [],
-        rangeOfMotionAvg: 0,
-        velocityAvg: 0,
-        consistencyScore: 0,
-        coachingCues: analytics.coachingCues || [],
-      };
-
-      await storage.addFormAnalytics(formAnalytics);
-    } catch (error) {
-      console.error('Failed to save analytics:', error);
-    }
-  };
-
-  const reset = () => {
-    if (engineRef.current) {
-      engineRef.current.reset();
-    }
-    setRepCount(0);
-    setFormScore(100);
-    setCurrentCue(null);
-    setFormMetrics(null);
-  };
+    await engineRef.current.processPoseFrame(pose);
+  }, [isActive]);
 
   return {
     isInitialized,
     isActive,
     isSupported: definition?.supported || false,
-    repCount,
-    formScore,
-    currentCue,
     definition,
-    formMetrics,
-    startCapture,
-    stopCapture,
-    reset,
-    videoElementRef,
+    start,
+    stop,
+    processPose,
   };
 }
