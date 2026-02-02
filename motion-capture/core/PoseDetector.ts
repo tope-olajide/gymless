@@ -1,12 +1,33 @@
-import * as poseDetection from '@tensorflow-models/pose-detection';
-import * as tf from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-backend-webgl';
-import { PoseFrame, PoseLandmark } from '@/types/motion-capture';
+import { Platform } from 'react-native';
+import { PoseFrame } from '@/types/motion-capture';
+import {
+  convertMediaPipeLandmarksToFrame,
+  isValidPose,
+} from '@/motion-capture/constants/landmarks';
+
+let MediaPipePose: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    MediaPipePose = require('@gymbrosinc/react-native-mediapipe-pose');
+  } catch (error) {
+    console.warn('Native MediaPipe not available:', error);
+  }
+}
+
+export interface CameraFrame {
+  width: number;
+  height: number;
+  data: any;
+  timestamp: number;
+}
 
 export class PoseDetector {
-  private detector: poseDetection.PoseDetector | null = null;
+  private detector: any = null;
   private isInitialized: boolean = false;
   private isInitializing: boolean = false;
+  private lastFrameTime: number = 0;
+  private frameSkipMs: number = 33;
 
   async initialize(): Promise<boolean> {
     if (this.isInitialized) {
@@ -23,21 +44,29 @@ export class PoseDetector {
     this.isInitializing = true;
 
     try {
-      await tf.ready();
-      await tf.setBackend('webgl');
+      if (Platform.OS === 'web') {
+        console.warn(
+          'Native MediaPipe not available on web. Motion capture disabled.'
+        );
+        this.isInitializing = false;
+        return false;
+      }
 
-      const model = poseDetection.SupportedModels.MoveNet;
-      const detectorConfig: poseDetection.MoveNetModelConfig = {
-        modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
-        enableSmoothing: true,
-        minPoseScore: 0.3,
-      };
+      if (!MediaPipePose) {
+        throw new Error('MediaPipe module not loaded');
+      }
 
-      this.detector = await poseDetection.createDetector(model, detectorConfig);
+      this.detector = await MediaPipePose.createPoseDetector({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
       this.isInitialized = true;
       this.isInitializing = false;
 
-      console.log('Pose detector initialized successfully');
+      console.log('Native MediaPipe pose detector initialized successfully');
       return true;
     } catch (error) {
       console.error('Failed to initialize pose detector:', error);
@@ -46,88 +75,60 @@ export class PoseDetector {
     }
   }
 
-  async detectPose(videoElement: HTMLVideoElement): Promise<PoseFrame | null> {
+  async detectPose(frame: CameraFrame): Promise<PoseFrame | null> {
     if (!this.isInitialized || !this.detector) {
-      console.warn('Pose detector not initialized');
       return null;
     }
 
-    try {
-      const poses = await this.detector.estimatePoses(videoElement);
+    const now = Date.now();
+    if (now - this.lastFrameTime < this.frameSkipMs) {
+      return null;
+    }
+    this.lastFrameTime = now;
 
-      if (poses.length === 0) {
+    try {
+      const result = await this.detector.detectPose(frame);
+
+      if (!result || !result.landmarks || result.landmarks.length === 0) {
         return null;
       }
 
-      const pose = poses[0];
-      return this.convertToInternalFormat(pose);
+      const poseFrame = convertMediaPipeLandmarksToFrame(
+        result.landmarks,
+        frame.timestamp
+      );
+
+      if (!isValidPose(poseFrame)) {
+        return null;
+      }
+
+      return poseFrame;
     } catch (error) {
       console.error('Pose detection error:', error);
       return null;
     }
   }
 
-  private convertToInternalFormat(pose: poseDetection.Pose): PoseFrame {
-    const keypoints = pose.keypoints;
-
-    const getLandmark = (name: string): PoseLandmark => {
-      const kp = keypoints.find((k) => k.name === name);
-      if (!kp) {
-        return { x: 0, y: 0, z: 0, visibility: 0 };
-      }
-
-      return {
-        x: kp.x || 0,
-        y: kp.y || 0,
-        z: (kp as any).z || 0,
-        visibility: kp.score || 0,
-      };
-    };
-
-    return {
-      timestamp: Date.now(),
-      landmarks: {
-        nose: getLandmark('nose'),
-        leftEye: getLandmark('left_eye'),
-        rightEye: getLandmark('right_eye'),
-        leftEar: getLandmark('left_ear'),
-        rightEar: getLandmark('right_ear'),
-        leftShoulder: getLandmark('left_shoulder'),
-        rightShoulder: getLandmark('right_shoulder'),
-        leftElbow: getLandmark('left_elbow'),
-        rightElbow: getLandmark('right_elbow'),
-        leftWrist: getLandmark('left_wrist'),
-        rightWrist: getLandmark('right_wrist'),
-        leftHip: getLandmark('left_hip'),
-        rightHip: getLandmark('right_hip'),
-        leftKnee: getLandmark('left_knee'),
-        rightKnee: getLandmark('right_knee'),
-        leftAnkle: getLandmark('left_ankle'),
-        rightAnkle: getLandmark('right_ankle'),
-        leftHeel: getLandmark('left_heel'),
-        rightHeel: getLandmark('right_heel'),
-        leftFootIndex: getLandmark('left_foot_index'),
-        rightFootIndex: getLandmark('right_foot_index'),
-        leftPinky: getLandmark('left_pinky'),
-        rightPinky: getLandmark('right_pinky'),
-        leftIndex: getLandmark('left_index'),
-        rightIndex: getLandmark('right_index'),
-        leftThumb: getLandmark('left_thumb'),
-        rightThumb: getLandmark('right_thumb'),
-      },
-    };
+  setFrameRate(fps: number): void {
+    this.frameSkipMs = Math.floor(1000 / fps);
   }
 
   async dispose(): Promise<void> {
     if (this.detector) {
-      this.detector.dispose();
-      this.detector = null;
-      this.isInitialized = false;
-      console.log('Pose detector disposed');
+      try {
+        if (this.detector.dispose) {
+          await this.detector.dispose();
+        }
+        this.detector = null;
+        this.isInitialized = false;
+        console.log('Pose detector disposed');
+      } catch (error) {
+        console.error('Error disposing pose detector:', error);
+      }
     }
   }
 
   isReady(): boolean {
-    return this.isInitialized;
+    return this.isInitialized && Platform.OS !== 'web';
   }
 }
