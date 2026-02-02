@@ -25,7 +25,7 @@ export function AICoachToggle({
   isSupported,
   isInitializing = false,
 }: AICoachToggleProps) {
-  const { theme } = useTheme();
+  const { colors } = useTheme();
 
   const handleToggle = () => {
     if (!isSupported || isInitializing) {
@@ -43,7 +43,7 @@ export function AICoachToggle({
     if (isInitializing) {
       return (
         <View style={styles.statusContainer}>
-          <ActivityIndicator size="small" color={theme.colors.primary} />
+          <ActivityIndicator size="small" color={colors.primary} />
         </View>
       );
     }
@@ -60,7 +60,7 @@ export function AICoachToggle({
       <View
         style={[
           styles.statusIndicator,
-          { backgroundColor: theme.colors.textSecondary },
+          { backgroundColor: colors.textSecondary },
         ]}
       >
         <Text style={styles.statusText}>Off</Text>
@@ -75,8 +75,8 @@ export function AICoachToggle({
       style={[
         styles.container,
         {
-          backgroundColor: theme.colors.surface,
-          borderColor: enabled ? theme.colors.primary : theme.colors.border,
+          backgroundColor: colors.surface,
+          borderColor: enabled ? colors.primary : colors.border,
         },
         isDisabled && styles.disabled,
       ]}
@@ -89,8 +89,8 @@ export function AICoachToggle({
         <Text
           style={[
             styles.label,
-            { color: theme.colors.text },
-            isDisabled && { color: theme.colors.textSecondary },
+            { color: colors.text },
+            isDisabled && { color: colors.textSecondary },
           ]}
         >
           AI Coach
