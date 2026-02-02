@@ -12,7 +12,9 @@
       },
       "ios": {
         "simulator": true
-      }
+      },
+      "node": "20.5.0",
+      "npmInstall": true
     },
     "preview": {
       "distribution": "internal"
