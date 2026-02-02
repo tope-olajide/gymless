@@ -29,26 +29,31 @@ export default function MotionCaptureDemoScreen() {
     { id: 'plank', name: 'Plank', supported: true },
   ];
 
+  const [repCount, setRepCount] = useState(0);
+  const [formScore, setFormScore] = useState(0);
+  const [currentCue, setCurrentCue] = useState<any>(null);
+
   const {
-    isInitialized,
+    cameraReady,
     isSupported,
-    repCount,
-    formScore,
-    currentCue,
     definition,
-    startCapture,
-    stopCapture,
-    reset,
-  } = useMotionCapture({
-    exerciseId: selectedExercise,
-    exerciseName: exercises.find((e) => e.id === selectedExercise)?.name || '',
-    enabled: true,
-    workoutId: 'demo-' + Date.now(),
-    onRepComplete: (count) => {
+    start,
+    stop,
+    processPose,
+    onCameraReady,
+  } = useMotionCapture(selectedExercise, {
+    onRepComplete: (count: number) => {
       console.log('Rep completed:', count);
+      setRepCount(count);
       if (count >= targetReps) {
         handleComplete();
       }
+    },
+    onFormUpdate: (metrics) => {
+      setFormScore(metrics.score);
+    },
+    onCoachingCue: (cue) => {
+      setCurrentCue(cue);
     },
   });
 
@@ -63,19 +68,19 @@ export default function MotionCaptureDemoScreen() {
       return;
     }
 
-    if (!isInitialized) {
+    if (!cameraReady) {
       Alert.alert('Loading', 'Motion capture is still initializing. Please wait...');
       return;
     }
 
     setIsActive(true);
     setTimeout(() => {
-      startCapture();
+      start();
     }, 100);
   };
 
   const handleStop = () => {
-    stopCapture();
+    stop();
     setIsActive(false);
   };
 
@@ -90,7 +95,9 @@ export default function MotionCaptureDemoScreen() {
           text: 'Done',
           onPress: () => {
             handleStop();
-            reset();
+            setRepCount(0);
+            setFormScore(0);
+            setCurrentCue(null);
           },
         },
       ]
@@ -246,9 +253,9 @@ export default function MotionCaptureDemoScreen() {
           title={`Start ${exercises.find((e) => e.id === selectedExercise)?.name} Demo`}
           onPress={handleStart}
           variant="primary"
-          disabled={!isInitialized}
+          disabled={!cameraReady}
         />
-        {!isInitialized && (
+        {!cameraReady && (
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
             Initializing pose detection...
           </Text>

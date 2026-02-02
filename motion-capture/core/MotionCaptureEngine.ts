@@ -1,4 +1,3 @@
-import { PoseDetector } from './PoseDetector';
 import { RepCounter } from './RepCounter';
 import { FormScorer } from './FormScorer';
 import { GeminiClient } from './GeminiClient';
@@ -20,7 +19,6 @@ export interface MotionCaptureConfig {
 }
 
 export class MotionCaptureEngine {
-  private poseDetector: PoseDetector;
   private repCounter: RepCounter;
   private formScorer: FormScorer;
   private geminiClient: GeminiClient;
@@ -33,7 +31,6 @@ export class MotionCaptureEngine {
 
   constructor(config: MotionCaptureConfig) {
     this.config = config;
-    this.poseDetector = new PoseDetector();
     this.repCounter = new RepCounter(config.exerciseDefinition.repCounting);
     this.formScorer = new FormScorer(config.exerciseDefinition);
     this.geminiClient = new GeminiClient(config.geminiApiKey);
@@ -48,16 +45,6 @@ export class MotionCaptureEngine {
       repScores: [],
       coachingCues: [],
     };
-  }
-
-  async initialize(): Promise<boolean> {
-    try {
-      const success = await this.poseDetector.initialize();
-      return success;
-    } catch (error) {
-      console.error('Failed to initialize motion capture:', error);
-      return false;
-    }
   }
 
   start(): void {
@@ -172,12 +159,11 @@ export class MotionCaptureEngine {
     };
   }
 
-  async dispose(): Promise<void> {
+  dispose(): void {
     this.stop();
-    await this.poseDetector.dispose();
   }
 
   isReady(): boolean {
-    return this.poseDetector.isReady();
+    return this.config.exerciseDefinition.supported;
   }
 }

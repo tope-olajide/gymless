@@ -1,104 +1,122 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, Platform, Text } from 'react-native';
 import { PoseFrame } from '@/types/motion-capture';
-import { PoseDetector, CameraFrame } from '@/motion-capture/core/PoseDetector';
+import { convertMediaPipeLandmarksToFrame } from '@/motion-capture/constants/landmarks';
+import { WebPoseComponent } from './WebPoseComponent';
+
+let ReactNativeMediapipePoseView: any = null;
+let CameraType: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    const module = require('@gymbrosinc/react-native-mediapipe-pose');
+    ReactNativeMediapipePoseView = module.ReactNativeMediapipePoseView;
+    CameraType = module.CameraType;
+  } catch (error) {
+    console.warn('Native MediaPipe module not available');
+  }
+}
 
 interface MotionCaptureViewProps {
   onPoseDetected?: (pose: PoseFrame) => void;
+  onCameraReady?: () => void;
+  onError?: (error: string) => void;
   showSkeleton?: boolean;
-  facing?: CameraType;
+  facing?: 'front' | 'back';
   style?: any;
   enabled?: boolean;
 }
 
 export function MotionCaptureView({
   onPoseDetected,
+  onCameraReady,
+  onError,
   showSkeleton = true,
   facing = 'front',
   style,
   enabled = true,
 }: MotionCaptureViewProps) {
-  const [permission, requestPermission] = useCameraPermissions();
-  const detectorRef = useRef<PoseDetector | null>(null);
-  const [isDetectorReady, setIsDetectorReady] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
 
-  useEffect(() => {
-    if (!permission?.granted) {
-      requestPermission();
-    }
-  }, [permission]);
+  const handlePoseDetected = useCallback(
+    (event: any) => {
+      if (!enabled || !onPoseDetected) return;
 
-  useEffect(() => {
-    if (enabled && Platform.OS !== 'web') {
-      initializeDetector();
-    }
+      try {
+        const landmarks = Platform.OS === 'web' ? event : event.nativeEvent.landmarks;
 
-    return () => {
-      cleanupDetector();
-    };
-  }, [enabled]);
-
-  const initializeDetector = async () => {
-    if (detectorRef.current) return;
-
-    const detector = new PoseDetector();
-    const success = await detector.initialize();
-
-    if (success) {
-      detectorRef.current = detector;
-      setIsDetectorReady(true);
-    }
-  };
-
-  const cleanupDetector = async () => {
-    if (detectorRef.current) {
-      await detectorRef.current.dispose();
-      detectorRef.current = null;
-      setIsDetectorReady(false);
-    }
-  };
-
-  const handleFrame = useCallback(async (frame: any) => {
-    if (!enabled || !isDetectorReady || !detectorRef.current || !onPoseDetected) {
-      return;
-    }
-
-    try {
-      const cameraFrame: CameraFrame = {
-        width: frame.width || 640,
-        height: frame.height || 480,
-        data: frame,
-        timestamp: Date.now(),
-      };
-
-      const pose = await detectorRef.current.detectPose(cameraFrame);
-
-      if (pose) {
-        onPoseDetected(pose);
+        if (landmarks && landmarks.length >= 33) {
+          const poseFrame = convertMediaPipeLandmarksToFrame(
+            landmarks,
+            Date.now()
+          );
+          onPoseDetected(poseFrame);
+        }
+      } catch (error) {
+        console.error('Error processing pose:', error);
       }
-    } catch (error) {
-      console.error('Error processing frame:', error);
-    }
-  }, [enabled, isDetectorReady, onPoseDetected]);
+    },
+    [enabled, onPoseDetected]
+  );
 
-  if (!permission?.granted) {
-    return <View style={[styles.container, style]} />;
-  }
+  const handleCameraReady = useCallback(() => {
+    setCameraReady(true);
+    onCameraReady?.();
+  }, [onCameraReady]);
+
+  const handleError = useCallback(
+    (error: any) => {
+      const errorMessage = typeof error === 'string' ? error : error?.nativeEvent?.error || 'Camera error';
+      console.error('Motion capture error:', errorMessage);
+      onError?.(errorMessage);
+    },
+    [onError]
+  );
 
   if (Platform.OS === 'web') {
     return (
       <View style={[styles.container, style]}>
-        <View style={styles.webPlaceholder} />
+        <WebPoseComponent
+          onPoseDetected={handlePoseDetected}
+          onCameraReady={handleCameraReady}
+          onError={handleError}
+          showSkeleton={showSkeleton}
+          cameraType={facing}
+          style={styles.camera}
+        />
+      </View>
+    );
+  }
+
+  if (!ReactNativeMediapipePoseView) {
+    return (
+      <View style={[styles.container, style]}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>
+            Native MediaPipe module not available
+          </Text>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={[styles.container, style]}>
-      <CameraView
+      <ReactNativeMediapipePoseView
+        key={`camera-${facing}`}
         style={styles.camera}
-        facing={facing}
+        cameraType={facing}
+        enablePoseDetection={enabled}
+        enablePoseDataStreaming={true}
+        targetFPS={30}
+        autoAdjustFPS={true}
+        poseDataThrottleMs={33}
+        fpsChangeThreshold={2.0}
+        fpsReportThrottleMs={500}
+        enableDetailedLogs={false}
+        onCameraReady={handleCameraReady}
+        onError={handleError}
+        onPoseDetected={handlePoseDetected}
       />
     </View>
   );
@@ -112,8 +130,17 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
-  webPlaceholder: {
+  errorContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: '#1a1a1a',
+  },
+  errorText: {
+    color: '#ff4444',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    padding: 20,
   },
 });

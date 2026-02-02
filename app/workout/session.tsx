@@ -74,11 +74,10 @@ export default function WorkoutSessionScreen() {
   const overallProgress = (completedExercises / totalExercises) * 100;
 
   const isMotionCaptureSupported =
-    Platform.OS !== 'web' &&
     currentExercise?.poseDetection?.supported === true &&
     phase === 'exercise';
 
-  const { start, stop, processPose, isInitialized } = useMotionCapture(
+  const { start, stop, processPose, cameraReady, onCameraReady } = useMotionCapture(
     currentExercise?.id || '',
     {
       onRepComplete: (count) => {
@@ -274,7 +273,7 @@ export default function WorkoutSessionScreen() {
             enabled={aiCoachEnabled}
             onToggle={handleAICoachToggle}
             isSupported={isMotionCaptureSupported}
-            isInitializing={aiCoachEnabled && !isInitialized}
+            isInitializing={aiCoachEnabled && !cameraReady}
           />
         )}
       </View>
@@ -284,6 +283,7 @@ export default function WorkoutSessionScreen() {
           <View style={styles.cameraOverlay}>
             <MotionCaptureView
               onPoseDetected={handlePoseDetected}
+              onCameraReady={onCameraReady}
               showSkeleton={true}
               facing="front"
               enabled={aiCoachEnabled}
