@@ -41,7 +41,14 @@ export const exercises: Record<string, Exercise> = {
     defaultReps: null,
     isTimeBased: true,
     safetyFlags: { isExplosive: false, requiresSpace: false, spineLoaded: false, highImpact: false },
-    poseDetection: { supported: true, config: null, requiredLandmarks: ['hips', 'knees', 'back'], movementPattern: null, repCountingLogic: null, formValidationRules: null },
+    poseDetection: {
+      supported: true,
+      config: 'wallSit',
+      requiredLandmarks: ['hips', 'knees', 'ankles', 'shoulders'],
+      movementPattern: 'squat-pattern',
+      repCountingLogic: 'timer',
+      formValidationRules: ['ninety-degree-knee', 'back-flat', 'position-drift']
+    },
     fallbackMode: 'timer',
     imageUrl: null,
   },
@@ -63,7 +70,14 @@ export const exercises: Record<string, Exercise> = {
     defaultReps: 12,
     isTimeBased: false,
     safetyFlags: { isExplosive: false, requiresSpace: true, spineLoaded: false, highImpact: false },
-    poseDetection: { supported: true, config: null, requiredLandmarks: ['hips', 'knees', 'ankles'], movementPattern: null, repCountingLogic: null, formValidationRules: null },
+    poseDetection: {
+      supported: true,
+      config: 'stepUps',
+      requiredLandmarks: ['hips', 'knees', 'ankles', 'shoulders'],
+      movementPattern: 'single-leg-pattern',
+      repCountingLogic: 'hip-vertical',
+      formValidationRules: ['lead-leg-power', 'torso-upright', 'controlled-descent', 'balance']
+    },
     fallbackMode: 'reps',
     imageUrl: null,
   },
@@ -107,7 +121,14 @@ export const exercises: Record<string, Exercise> = {
     defaultReps: 15,
     isTimeBased: false,
     safetyFlags: { isExplosive: false, requiresSpace: false, spineLoaded: false, highImpact: false },
-    poseDetection: { supported: true, config: null, requiredLandmarks: ['hips', 'knees', 'ankles'], movementPattern: null, repCountingLogic: null, formValidationRules: null },
+    poseDetection: {
+      supported: true,
+      config: 'sumoSquats',
+      requiredLandmarks: ['hips', 'knees', 'ankles'],
+      movementPattern: 'squat-pattern',
+      repCountingLogic: 'hip-vertical',
+      formValidationRules: ['knee-tracking', 'depth', 'spine-neutral', 'stance-width']
+    },
     fallbackMode: 'reps',
     imageUrl: null,
   },
@@ -195,7 +216,14 @@ export const exercises: Record<string, Exercise> = {
     defaultReps: 15,
     isTimeBased: false,
     safetyFlags: { isExplosive: false, requiresSpace: true, spineLoaded: false, highImpact: false },
-    poseDetection: { supported: true, config: null, requiredLandmarks: ['hips', 'knees', 'ankles'], movementPattern: null, repCountingLogic: null, formValidationRules: null },
+    poseDetection: {
+      supported: true,
+      config: 'chairSquats',
+      requiredLandmarks: ['hips', 'knees', 'ankles', 'shoulders'],
+      movementPattern: 'squat-pattern',
+      repCountingLogic: 'hip-vertical',
+      formValidationRules: ['controlled-descent', 'chair-touch', 'spine-neutral']
+    },
     fallbackMode: 'reps',
     imageUrl: null,
   },
