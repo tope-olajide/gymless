@@ -23,9 +23,11 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
 
   const [cameraReady, setCameraReady] = useState(false);
   const [isActive, setIsActive] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [definition, setDefinition] = useState<ExerciseMotionCapture | null>(null);
 
   const engineRef = useRef<MotionCaptureEngine | null>(null);
+  const pendingStartRef = useRef(false);
 
   useEffect(() => {
     if (!exerciseId) return;
@@ -35,15 +37,20 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
     if (!exerciseDef || !exerciseDef.supported) {
       console.log(`Motion capture not supported for exercise: ${exerciseId}`);
       setDefinition(null);
+      setIsInitialized(false);
       return;
     }
 
     setDefinition(exerciseDef);
+    setIsInitialized(false);
     initializeEngine(exerciseDef);
 
     return () => {
-      stop();
+      pendingStartRef.current = false;
+      engineRef.current?.stop();
       engineRef.current?.dispose();
+      engineRef.current = null;
+      setIsInitialized(false);
     };
   }, [exerciseId]);
 
@@ -78,9 +85,17 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
       });
 
       engineRef.current = engine;
+      setIsInitialized(true);
       console.log('Motion capture engine initialized');
+
+      if (pendingStartRef.current) {
+        pendingStartRef.current = false;
+        engine.start();
+        setIsActive(true);
+      }
     } catch (error) {
       console.error('Failed to initialize motion capture:', error);
+      setIsInitialized(false);
     }
   };
 
@@ -113,7 +128,7 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
 
   const start = useCallback(() => {
     if (!engineRef.current) {
-      console.warn('Engine not initialized');
+      pendingStartRef.current = true;
       return;
     }
 
@@ -122,6 +137,7 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
   }, []);
 
   const stop = useCallback(() => {
+    pendingStartRef.current = false;
     if (!engineRef.current) return;
 
     engineRef.current.stop();
@@ -137,6 +153,7 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
   return {
     cameraReady,
     isActive,
+    isInitialized,
     isSupported: definition?.supported || false,
     definition,
     start,
