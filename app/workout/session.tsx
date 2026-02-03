@@ -17,6 +17,7 @@ import {
   SkipForward,
   ChevronRight,
   AlertTriangle,
+  Info,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ProgressRing } from '@/components/ui/ProgressRing';
@@ -73,11 +74,8 @@ export default function WorkoutSessionScreen() {
   const completedExercises = currentIndex;
   const overallProgress = (completedExercises / totalExercises) * 100;
 
-  const isMotionCaptureSupported =
-    currentExercise?.poseDetection?.supported === true &&
-    phase === 'exercise';
 
-  const { start, stop, processPose, cameraReady, onCameraReady } = useMotionCapture(
+  const { start, stop, processPose, cameraReady, onCameraReady, isSupported, isInitialized } = useMotionCapture(
     currentExercise?.id || '',
     {
       onRepComplete: (count) => {
@@ -91,6 +89,8 @@ export default function WorkoutSessionScreen() {
       },
     }
   );
+
+  const isMotionCaptureAvailable = isSupported && phase === 'exercise';
 
   const handlePoseDetected = useCallback(
     (pose: PoseFrame) => {
@@ -267,12 +267,12 @@ export default function WorkoutSessionScreen() {
             {completedExercises + 1} / {totalExercises}
           </Text>
         </View>
-        {isMotionCaptureSupported && (
+        {isMotionCaptureAvailable && (
           <AICoachToggle
             exerciseId={currentExercise?.id || ''}
             enabled={aiCoachEnabled}
             onToggle={handleAICoachToggle}
-            isSupported={isMotionCaptureSupported}
+            isSupported={isMotionCaptureAvailable}
             isInitializing={aiCoachEnabled && !cameraReady}
           />
         )}
@@ -327,6 +327,20 @@ export default function WorkoutSessionScreen() {
                   <AlertTriangle size={14} color={colors.secondary} />
                   <Text style={[styles.warningText, { color: colors.secondary }]}>
                     Clear space
+                  </Text>
+                </View>
+              )}
+
+              {!isMotionCaptureAvailable && phase === 'exercise' && (
+                <View
+                  style={[
+                    styles.infoBadge,
+                    { backgroundColor: colors.surfaceSecondary },
+                  ]}
+                >
+                  <Info size={14} color={colors.textTertiary} />
+                  <Text style={[styles.infoText, { color: colors.textTertiary }]}>
+                    AI Coach not available for this exercise
                   </Text>
                 </View>
               )}
@@ -494,6 +508,19 @@ const styles = StyleSheet.create({
   },
   warningText: {
     fontSize: FontSizes.sm,
+    fontWeight: FontWeights.medium,
+  },
+  infoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    marginTop: Spacing.sm,
+  },
+  infoText: {
+    fontSize: FontSizes.xs,
     fontWeight: FontWeights.medium,
   },
   timerSection: {
