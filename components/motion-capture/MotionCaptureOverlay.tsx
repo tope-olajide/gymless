@@ -4,8 +4,8 @@ import { RepCounter } from './RepCounter';
 import { FormMeter } from './FormMeter';
 import { CoachingCueCard } from './CoachingCueCard';
 import { MotionCaptureView } from './MotionCaptureView';
-import { CoachingCue } from '@/types/motion-capture';
-import { X } from 'lucide-react-native';
+import { PoseFrame, CoachingCue } from '@/types/motion-capture';
+import { X, AlertTriangle } from 'lucide-react-native';
 
 interface MotionCaptureOverlayProps {
   repCount: number;
@@ -15,6 +15,10 @@ interface MotionCaptureOverlayProps {
   phase?: 'idle' | 'descending' | 'bottom' | 'ascending';
   onClose?: () => void;
   showCamera?: boolean;
+  onPoseDetected?: (pose: PoseFrame) => void;
+  onCameraReady?: () => void;
+  onError?: (error: string) => void;
+  error?: string | null;
 }
 
 export function MotionCaptureOverlay({
@@ -25,12 +29,28 @@ export function MotionCaptureOverlay({
   phase = 'idle',
   onClose,
   showCamera = true,
+  onPoseDetected,
+  onCameraReady,
+  onError,
+  error,
 }: MotionCaptureOverlayProps) {
   return (
     <View style={styles.container}>
       {showCamera && (
         <View style={styles.cameraContainer}>
-          <MotionCaptureView style={styles.camera} />
+          <MotionCaptureView
+            style={styles.camera}
+            onPoseDetected={onPoseDetected}
+            onCameraReady={onCameraReady}
+            onError={onError}
+          />
+        </View>
+      )}
+
+      {error && (
+        <View style={styles.errorBanner}>
+          <AlertTriangle size={20} color="#FFFFFF" />
+          <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
 
@@ -121,5 +141,24 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  errorBanner: {
+    position: 'absolute',
+    top: 100, // Below top metrics
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(255, 68, 68, 0.9)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    zIndex: 20,
+    gap: 10,
+  },
+  errorText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
   },
 });
