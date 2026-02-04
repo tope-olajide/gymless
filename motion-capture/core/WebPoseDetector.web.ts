@@ -35,6 +35,7 @@ const BLAZEPOSE_KEYPOINT_MAP = {
 export class WebPoseDetector {
   private detector: poseDetection.PoseDetector | null = null;
   private isInitialized: boolean = false;
+  private useMoveNet: boolean = false;
   private lastFrameTime: number = 0;
   private targetFPS: number = 30;
   private frameSkipMs: number = 33;
@@ -45,23 +46,46 @@ export class WebPoseDetector {
     }
 
     try {
+      // Explicitly set WebGL backend before initializing
+      console.log('Setting up TensorFlow.js WebGL backend...');
+      await tf.setBackend('webgl');
       await tf.ready();
+      console.log('TensorFlow.js ready with backend:', tf.getBackend());
 
       const model = poseDetection.SupportedModels.BlazePose;
       const detectorConfig: poseDetection.BlazePoseMediaPipeModelConfig = {
         runtime: 'mediapipe',
         modelType: 'lite',
-        solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/pose',
+        // Use specific MediaPipe version for stability
+        solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404',
       };
 
+      console.log('Creating BlazePose detector...');
       this.detector = await poseDetection.createDetector(model, detectorConfig);
       this.isInitialized = true;
       console.log('WebPoseDetector initialized successfully');
       return true;
     } catch (error) {
       console.error('Failed to initialize WebPoseDetector:', error);
-      this.isInitialized = false;
-      return false;
+
+      // Try fallback to TFJS runtime if MediaPipe fails
+      try {
+        console.log('Attempting fallback to TensorFlow.js runtime...');
+        const model = poseDetection.SupportedModels.MoveNet;
+        const detectorConfig: poseDetection.MoveNetModelConfig = {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
+        };
+
+        this.detector = await poseDetection.createDetector(model, detectorConfig);
+        this.isInitialized = true;
+        this.useMoveNet = true;
+        console.log('WebPoseDetector initialized with MoveNet fallback');
+        return true;
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+        this.isInitialized = false;
+        return false;
+      }
     }
   }
 
@@ -86,7 +110,9 @@ export class WebPoseDetector {
       }
 
       const pose = poses[0];
-      if (!pose.keypoints || pose.keypoints.length < 27) {
+      // MoveNet has 17 keypoints, BlazePose has 33
+      const minKeypoints = this.useMoveNet ? 17 : 17;
+      if (!pose.keypoints || pose.keypoints.length < minKeypoints) {
         return null;
       }
 
@@ -103,7 +129,9 @@ export class WebPoseDetector {
   ): PoseFrame {
     const landmarks: any = {};
 
-    for (let i = 0; i < keypoints.length && i < 27; i++) {
+    // Both BlazePose and MoveNet share the same first 17 keypoint indices
+    const maxKeypoints = Math.min(keypoints.length, 27);
+    for (let i = 0; i < maxKeypoints; i++) {
       const kp = keypoints[i];
       const landmarkName = BLAZEPOSE_KEYPOINT_MAP[i as keyof typeof BLAZEPOSE_KEYPOINT_MAP];
 
