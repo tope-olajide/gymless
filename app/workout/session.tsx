@@ -434,6 +434,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     gap: Spacing.md,
+    zIndex: 10,
   },
   closeButton: {
     padding: Spacing.sm,
@@ -463,6 +464,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.lg,
+    zIndex: 10,
   },
   restContainer: {
     alignItems: 'center',
@@ -550,6 +552,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.lg,
     paddingVertical: Spacing.xl,
+    zIndex: 10,
   },
   controlButton: {
     width: 56,
@@ -579,6 +582,7 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.lg,
     borderRadius: BorderRadius.md,
+    zIndex: 10,
   },
   nextUpLabel: {
     fontSize: FontSizes.sm,
@@ -599,10 +603,21 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    opacity: 0.4,
-    zIndex: -1,
+    zIndex: 1,
+    ...Platform.select({
+      android: {
+        opacity: 1,
+      },
+      default: {
+        opacity: 0.4,
+      },
+    }),
   },
   camera: {
     flex: 1,
+  },
+  uiLayer: {
+    flex: 1,
+    zIndex: 2,
   },
 });
