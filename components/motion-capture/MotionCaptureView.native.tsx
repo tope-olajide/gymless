@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Platform } from 'react-native';
+import { Camera } from 'expo-camera';
 import { PoseFrame } from '@/types/motion-capture';
 import { convertMediaPipeLandmarksToFrame } from '@/motion-capture/constants/landmarks';
 
@@ -8,11 +9,12 @@ let ReactNativeMediapipePoseView: any = null;
 try {
   const module = require('@gymbrosinc/react-native-mediapipe-pose');
   ReactNativeMediapipePoseView = module.ReactNativeMediapipePoseView;
+  console.log('Native MediaPipe module loaded successfully');
 } catch (error) {
-  console.warn('Native MediaPipe module not available');
+  console.warn('Native MediaPipe module not available:', error);
 }
 
-const CAMERA_READY_TIMEOUT_MS = 3000;
+const CAMERA_READY_TIMEOUT_MS = 5000;
 
 interface MotionCaptureViewProps {
   onPoseDetected?: (pose: PoseFrame) => void;
@@ -34,11 +36,48 @@ export function MotionCaptureView({
   enabled = true,
 }: MotionCaptureViewProps) {
   const [cameraReady, setCameraReady] = useState(false);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [permissionRequested, setPermissionRequested] = useState(false);
   const cameraReadyCalledRef = useRef(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<any>(null);
 
+  // Request camera permissions on mount
   useEffect(() => {
     if (!ReactNativeMediapipePoseView || !enabled) return;
+
+    const checkPermissions = async () => {
+      try {
+        const { status } = await Camera.getCameraPermissionsAsync();
+        if (status === 'granted') {
+          setHasPermission(true);
+        } else {
+          setHasPermission(false);
+          if (status === 'undetermined') {
+            requestPermission();
+          }
+        }
+      } catch (error) {
+        console.error('Error checking camera permissions:', error);
+        setHasPermission(false);
+      }
+    };
+
+    checkPermissions();
+  }, [enabled]);
+
+  const requestPermission = async () => {
+    try {
+      setPermissionRequested(true);
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      setHasPermission(status === 'granted');
+    } catch (error) {
+      console.error('Error requesting camera permissions:', error);
+      setHasPermission(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!hasPermission) return;
 
     timeoutRef.current = setTimeout(() => {
       if (!cameraReadyCalledRef.current) {
@@ -54,7 +93,7 @@ export function MotionCaptureView({
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [enabled, onCameraReady]);
+  }, [enabled, onCameraReady, hasPermission]);
 
   const handlePoseDetected = useCallback(
     (event: any) => {
@@ -119,24 +158,63 @@ export function MotionCaptureView({
     );
   }
 
+  if (hasPermission === false) {
+    return (
+      <View style={[styles.container, style]}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>
+            Camera permission is required for motion capture
+          </Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={requestPermission}
+          >
+            <Text style={styles.buttonText}>Grant Permission</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  if (hasPermission === null) {
+    return (
+      <View style={[styles.container, style]}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.text}>Checking permissions...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const [layoutReady, setLayoutReady] = useState(false);
+
   return (
-    <View style={[styles.container, style]}>
-      <ReactNativeMediapipePoseView
-        key={`camera-${facing}`}
-        style={styles.camera}
-        cameraType={facing}
-        enablePoseDetection={enabled}
-        enablePoseDataStreaming={true}
-        targetFPS={30}
-        autoAdjustFPS={true}
-        poseDataThrottleMs={33}
-        fpsChangeThreshold={2.0}
-        fpsReportThrottleMs={500}
-        enableDetailedLogs={false}
-        onCameraReady={handleCameraReady}
-        onError={handleError}
-        onPoseDetected={handlePoseDetected}
-      />
+    <View
+      style={[styles.container, style]}
+      onLayout={(e) => {
+        if (e.nativeEvent.layout.width > 0 && e.nativeEvent.layout.height > 0) {
+          setLayoutReady(true);
+        }
+      }}
+    >
+      {layoutReady && (
+        <ReactNativeMediapipePoseView
+          key={`camera-${facing}-${hasPermission}`}
+          style={styles.camera}
+          cameraType={facing}
+          enablePoseDetection={enabled}
+          enablePoseDataStreaming={true}
+          targetFPS={30}
+          autoAdjustFPS={true}
+          poseDataThrottleMs={33}
+          fpsChangeThreshold={2.0}
+          fpsReportThrottleMs={500}
+          enableDetailedLogs={true}
+          onCameraReady={handleCameraReady}
+          onError={handleError}
+          onPoseDetected={handlePoseDetected}
+        />
+      )}
     </View>
   );
 }
@@ -154,12 +232,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#1a1a1a',
+    padding: 20,
   },
   errorText: {
     color: '#ff4444',
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
-    padding: 20,
+    marginBottom: 20,
+  },
+  text: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
