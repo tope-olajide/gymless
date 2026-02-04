@@ -37,6 +37,7 @@ export default function MotionCaptureDemoScreen() {
     cameraReady,
     isSupported,
     definition,
+    error,
     start,
     stop,
     processPose,
@@ -61,8 +62,7 @@ export default function MotionCaptureDemoScreen() {
     if (!isSupported) {
       Alert.alert(
         'Not Supported',
-        `Motion capture is not available for ${
-          exercises.find((e) => e.id === selectedExercise)?.name
+        `Motion capture is not available for ${exercises.find((e) => e.id === selectedExercise)?.name
         } yet.`
       );
       return;
@@ -114,6 +114,9 @@ export default function MotionCaptureDemoScreen() {
           coachingCue={currentCue}
           onClose={handleStop}
           showCamera={true}
+          onPoseDetected={processPose}
+          onCameraReady={onCameraReady}
+          error={error}
         />
       </SafeAreaView>
     );
