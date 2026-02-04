@@ -24,6 +24,7 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
   const [cameraReady, setCameraReady] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [definition, setDefinition] = useState<ExerciseMotionCapture | null>(null);
 
   const engineRef = useRef<MotionCaptureEngine | null>(null);
@@ -32,16 +33,25 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
   useEffect(() => {
     if (!exerciseId) return;
 
+    // Platform check
+    const isPlatformSupported = Platform.OS === 'web' || Platform.OS === 'android';
+    if (!isPlatformSupported) {
+      setError('Motion capture is only supported on Web and Android');
+      return;
+    }
+
     const exerciseDef = getExerciseDefinition(exerciseId);
 
     if (!exerciseDef || !exerciseDef.supported) {
       console.log(`Motion capture not supported for exercise: ${exerciseId}`);
+      setError(`Motion capture not supported for ${exerciseId}`);
       setDefinition(null);
       setIsInitialized(false);
       return;
     }
 
     setDefinition(exerciseDef);
+    setError(null);
     setIsInitialized(false);
     initializeEngine(exerciseDef);
 
@@ -95,6 +105,7 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
       }
     } catch (error) {
       console.error('Failed to initialize motion capture:', error);
+      setError(error instanceof Error ? error.message : 'Failed to initialize motion capture');
       setIsInitialized(false);
     }
   };
@@ -155,6 +166,7 @@ export function useMotionCapture(exerciseId: string, options: UseMotionCaptureOp
     isActive,
     isInitialized,
     isSupported: definition?.supported || false,
+    error,
     definition,
     start,
     stop,
