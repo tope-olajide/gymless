@@ -1,15 +1,18 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, Text, Platform } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { PoseFrame } from '@/types/motion-capture';
 import { convertMediaPipeLandmarksToFrame } from '@/motion-capture/constants/landmarks';
 
 let ReactNativeMediapipePoseView: any = null;
 
-try {
-  const module = require('@gymbrosinc/react-native-mediapipe-pose');
-  ReactNativeMediapipePoseView = module.ReactNativeMediapipePoseView;
-} catch (error) {
-  console.warn('Native MediaPipe module not available');
+if (Platform.OS === 'ios') {
+  try {
+    const module = require('@gymbrosinc/react-native-mediapipe-pose');
+    ReactNativeMediapipePoseView = module.ReactNativeMediapipePoseView;
+  } catch (error) {
+    console.warn('Native MediaPipe module not available');
+  }
 }
 
 const CAMERA_READY_TIMEOUT_MS = 3000;
@@ -36,9 +39,16 @@ export function MotionCaptureView({
   const [cameraReady, setCameraReady] = useState(false);
   const cameraReadyCalledRef = useRef(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
 
   useEffect(() => {
-    if (!ReactNativeMediapipePoseView || !enabled) return;
+    if (!permission?.granted) {
+      requestPermission();
+    }
+  }, [permission, requestPermission]);
+
+  useEffect(() => {
+    if (!enabled) return;
 
     timeoutRef.current = setTimeout(() => {
       if (!cameraReadyCalledRef.current) {
@@ -74,10 +84,7 @@ export function MotionCaptureView({
         const landmarks = event.nativeEvent?.landmarks;
 
         if (landmarks && landmarks.length >= 33) {
-          const poseFrame = convertMediaPipeLandmarksToFrame(
-            landmarks,
-            Date.now()
-          );
+          const poseFrame = convertMediaPipeLandmarksToFrame(landmarks, Date.now());
           onPoseDetected(poseFrame);
         }
       } catch (error) {
@@ -100,20 +107,58 @@ export function MotionCaptureView({
 
   const handleError = useCallback(
     (error: any) => {
-      const errorMessage = typeof error === 'string' ? error : error?.nativeEvent?.error || 'Camera error';
+      const errorMessage =
+        typeof error === 'string' ? error : error?.nativeEvent?.error || 'Camera error';
       console.error('Motion capture error:', errorMessage);
       onError?.(errorMessage);
     },
     [onError]
   );
 
-  if (!ReactNativeMediapipePoseView) {
+  if (!permission) {
+    return (
+      <View style={[styles.container, style]}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Checking camera permissions...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!permission.granted) {
     return (
       <View style={[styles.container, style]}>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>
-            Native MediaPipe module not available
+          <Text style={styles.errorText}>Camera permission required for motion capture</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (Platform.OS === 'android') {
+    return (
+      <View style={[styles.container, style]}>
+        <CameraView
+          style={styles.camera}
+          facing={facing}
+          onCameraReady={handleCameraReady}
+        />
+        <View style={styles.androidOverlay}>
+          <Text style={styles.androidOverlayText}>
+            AI pose detection on Android coming soon
           </Text>
+          <Text style={styles.androidOverlaySubtext}>Camera preview active</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!ReactNativeMediapipePoseView) {
+    return (
+      <View style={[styles.container, style]}>
+        <CameraView style={styles.camera} facing={facing} onCameraReady={handleCameraReady} />
+        <View style={styles.fallbackOverlay}>
+          <Text style={styles.fallbackText}>Pose detection unavailable</Text>
         </View>
       </View>
     );
@@ -149,6 +194,17 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+  },
+  loadingText: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
+  },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -161,5 +217,43 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     padding: 20,
+  },
+  androidOverlay: {
+    position: 'absolute',
+    bottom: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  androidOverlayText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  androidOverlaySubtext: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  fallbackOverlay: {
+    position: 'absolute',
+    bottom: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  fallbackText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
