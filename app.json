@@ -55,7 +55,6 @@
       ],
 
       "react-native-vision-camera",
-      "react-native-fast-tflite",
 
       [
         "expo-build-properties",

@@ -8,7 +8,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 // Native Imports (will likely be mocked/ignored on web bundle, but we validly import them for source code)
 import { usePushUpPoseProcessor } from '@/services/pose/PoseDetector.native';
 import { Canvas, Circle, Line, vec } from '@shopify/react-native-skia';
-import { Camera, useCameraDevice } from 'react-native-vision-camera';
+import { MediapipeCamera } from 'react-native-mediapipe-posedetection';
 
 // Debug status component
 function DebugOverlay({
@@ -46,7 +46,7 @@ function DebugOverlay({
     );
 }
 
-// Native Camera Component with Vision Camera + Skia
+// Native Camera Component with MediaPipe Pose Detection
 function NativeCameraView({
     isDetecting,
     onPoseDetected
@@ -54,9 +54,7 @@ function NativeCameraView({
     isDetecting: boolean;
     onPoseDetected: (pose: PushUpPose) => void;
 }) {
-    const device = useCameraDevice('front');
     const [latestPose, setLatestPose] = useState<PushUpPose | null>(null);
-    const [status, setStatus] = useState('Camera Ready');
 
     // Wrapper to update local state for drawing
     const onPose = useCallback((pose: PushUpPose) => {
@@ -66,25 +64,15 @@ function NativeCameraView({
         }
     }, [isDetecting, onPoseDetected]);
 
-    // Use our custom frame processor hook
-    const frameProcessor = usePushUpPoseProcessor(onPose);
-
-    if (!device) {
-        return (
-            <View style={styles.center}>
-                <Text style={styles.text}>Finding Camera...</Text>
-            </View>
-        );
-    }
+    // Use MediaPipe pose detection solution
+    const solution = usePushUpPoseProcessor(onPose);
 
     return (
         <View style={StyleSheet.absoluteFill}>
-            <Camera
-                style={StyleSheet.absoluteFill}
-                device={device}
-                isActive={true} // Keep camera active to show feed
-                frameProcessor={isDetecting ? frameProcessor : undefined}
-                pixelFormat="yuv" // Recommended for ML Kit
+            <MediapipeCamera
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                solution={solution}
+                activeCamera="front"
             />
 
             {/* Skia Overlay */}
