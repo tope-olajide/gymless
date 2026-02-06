@@ -7,68 +7,78 @@
     "icon": "./assets/adaptive-icon.png",
     "scheme": "gymless",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
+
     "splash": {
       "image": "./assets/adaptive-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+
+    "assetBundlePatterns": ["**/*"],
+
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.gymless.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera"
+        "NSCameraUsageDescription": "Allow Gymless to access your camera for form analysis and motion coaching."
       }
     },
+
     "android": {
+      "package": "com.gymless.app",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.gymless.app",
-      "permissions": [
-        "CAMERA",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ],
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "edgeToEdgeEnabled": true
     },
+
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/adaptive-icon.png"
     },
+
     "plugins": [
       "expo-router",
+
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Gymless to use your camera for form analysis and motion coaching."
+          "cameraPermission": "Allow Gymless to use your camera for form analysis."
         }
       ],
+
+      "react-native-vision-camera",
+      "react-native-fast-tflite",
+
       [
-        "expo-splash-screen",
+        "expo-build-properties",
         {
-          "image": "./assets/adaptive-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#000000",
-          "dark": {
-            "backgroundColor": "#000000"
+          "android": {
+            "kotlinVersion": "2.0.21",
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "packagingOptions": {
+              "pickFirst": [
+                "**/libc++_shared.so"
+              ]
+            }
           }
         }
-      ],
-      "react-native-vision-camera",
-      "react-native-fast-tflite"
+      ]
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
+
     "extra": {
       "router": {},
       "eas": {
