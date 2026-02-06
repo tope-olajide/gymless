@@ -1,62 +1,33 @@
-import React from 'react';
 import { Tabs } from 'expo-router';
-import { Platform } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Dumbbell, Calendar, User } from 'lucide-react-native';
-import { useTheme } from '@/contexts/ThemeContext';
-import { FontSizes, Spacing } from '@/constants/theme';
+import React from 'react';
+
+import { HapticTab } from '@/components/haptic-tab';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
+  const colorScheme = useColorScheme();
 
   return (
     <Tabs
       screenOptions={{
+        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 88 + insets.bottom : 64 + insets.bottom,
-          paddingTop: Spacing.sm,
-          paddingBottom: insets.bottom + Spacing.sm,
-        },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textTertiary,
-        tabBarLabelStyle: {
-          fontSize: FontSizes.xs,
-          fontWeight: '500',
-          marginTop: 4,
-        },
-      }}
-    >
+        tabBarButton: HapticTab,
+      }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="workouts"
+        name="explore"
         options={{
-          title: 'Workouts',
-          tabBarIcon: ({ color, size }) => <Dumbbell size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="progress"
-        options={{
-          title: 'Progress',
-          tabBarIcon: ({ color, size }) => <Calendar size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
+          title: 'Explore',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
         }}
       />
     </Tabs>
