@@ -1,102 +1,175 @@
 import { Keypoint, PushUpPose } from '@/types';
-import { Pose, PoseLandmark, detectPose } from '@scottjgilroy/react-native-vision-camera-v4-pose-detection';
+import { useEffect } from 'react';
+import { TensorflowModel, useTensorflowModel } from 'react-native-fast-tflite';
 import { useFrameProcessor } from 'react-native-vision-camera';
-import { Worklets } from 'react-native-worklets-core';
+import { Worklets, useSharedValue } from 'react-native-worklets-core';
+import { useResizePlugin } from 'vision-camera-resize-plugin';
 
 /**
- * Native Pose Detector for Android
- * Uses @scottjgilroy/react-native-vision-camera-v4-pose-detection (ML Kit)
+ * Native Pose Detector for Android/iOS
+ * Uses MoveNet Lightning via react-native-fast-tflite
  */
 
-// Mapping from ML Kit Pose Landmark Index to our PushUpPose keys
-// See: https://developers.google.com/ml-kit/vision/pose-detection/landmarks
-const MLKIT_LANDMARKS = {
+// MoveNet Lightning keypoint indices (17 keypoints)
+const MOVENET_KEYPOINTS = {
     NOSE: 0,
-    LEFT_SHOULDER: 11,
-    RIGHT_SHOULDER: 12,
-    LEFT_ELBOW: 13,
-    RIGHT_ELBOW: 14,
-    LEFT_WRIST: 15,
-    RIGHT_WRIST: 16,
-    LEFT_HIP: 23,
-    RIGHT_HIP: 24,
-    LEFT_KNEE: 25,
-    RIGHT_KNEE: 26,
-    LEFT_ANKLE: 27,
-    RIGHT_ANKLE: 28,
+    LEFT_EYE: 1,
+    RIGHT_EYE: 2,
+    LEFT_EAR: 3,
+    RIGHT_EAR: 4,
+    LEFT_SHOULDER: 5,
+    RIGHT_SHOULDER: 6,
+    LEFT_ELBOW: 7,
+    RIGHT_ELBOW: 8,
+    LEFT_WRIST: 9,
+    RIGHT_WRIST: 10,
+    LEFT_HIP: 11,
+    RIGHT_HIP: 12,
+    LEFT_KNEE: 13,
+    RIGHT_KNEE: 14,
+    LEFT_ANKLE: 15,
+    RIGHT_ANKLE: 16,
 };
 
+// MoveNet Lightning input size
+const MODEL_INPUT_SIZE = 192;
+
 /**
- * Maps a single ML Kit landmark to our Keypoint interface
+ * Parse MoveNet output to keypoints
+ * Output is a TypedArray with shape [1, 1, 17, 3] flattened - y, x, confidence for 17 keypoints
  */
-function mapLandmark(landmark: PoseLandmark): Keypoint {
+function parseOutput(
+    output: ArrayBufferLike,
+    frameWidth: number,
+    frameHeight: number
+): Keypoint[] {
     'worklet';
-    return {
-        x: landmark.x,
-        y: landmark.y,
-        confidence: landmark.confidence,
-    };
+    const keypoints: Keypoint[] = [];
+    const data = new Float32Array(output);
+
+    for (let i = 0; i < 17; i++) {
+        const baseIdx = i * 3;
+        const y = data[baseIdx];
+        const x = data[baseIdx + 1];
+        const confidence = data[baseIdx + 2];
+
+        keypoints.push({
+            x: x * frameWidth,
+            y: y * frameHeight,
+            confidence: confidence,
+        });
+    }
+
+    return keypoints;
 }
 
 /**
- * Maps the raw ML Kit pose to our PushUpPose interface
+ * Maps MoveNet keypoints to our PushUpPose interface
  */
-export function mapToPushUpPose(pose: Pose, timestamp: number): PushUpPose | null {
+function mapToPushUpPose(keypoints: Keypoint[], timestamp: number): PushUpPose | null {
     'worklet';
-    if (!pose || !pose.landmarks) return null;
+    if (keypoints.length < 17) return null;
 
-    const landmarks = pose.landmarks;
-
-    // Helper to get landmark safely
     const get = (index: number): Keypoint => {
-        const kp = landmarks[index];
-        // If landmark is missing, return low confidence
+        const kp = keypoints[index];
         if (!kp) return { x: 0, y: 0, confidence: 0 };
-        return mapLandmark(kp);
+        return kp;
     };
 
     return {
         timestamp,
-        nose: get(MLKIT_LANDMARKS.NOSE),
-        leftShoulder: get(MLKIT_LANDMARKS.LEFT_SHOULDER),
-        rightShoulder: get(MLKIT_LANDMARKS.RIGHT_SHOULDER),
-        leftElbow: get(MLKIT_LANDMARKS.LEFT_ELBOW),
-        rightElbow: get(MLKIT_LANDMARKS.RIGHT_ELBOW),
-        leftWrist: get(MLKIT_LANDMARKS.LEFT_WRIST),
-        rightWrist: get(MLKIT_LANDMARKS.RIGHT_WRIST),
-        leftHip: get(MLKIT_LANDMARKS.LEFT_HIP),
-        rightHip: get(MLKIT_LANDMARKS.RIGHT_HIP),
-        leftKnee: get(MLKIT_LANDMARKS.LEFT_KNEE),
-        rightKnee: get(MLKIT_LANDMARKS.RIGHT_KNEE),
-        leftAnkle: get(MLKIT_LANDMARKS.LEFT_ANKLE),
-        rightAnkle: get(MLKIT_LANDMARKS.RIGHT_ANKLE),
+        nose: get(MOVENET_KEYPOINTS.NOSE),
+        leftShoulder: get(MOVENET_KEYPOINTS.LEFT_SHOULDER),
+        rightShoulder: get(MOVENET_KEYPOINTS.RIGHT_SHOULDER),
+        leftElbow: get(MOVENET_KEYPOINTS.LEFT_ELBOW),
+        rightElbow: get(MOVENET_KEYPOINTS.RIGHT_ELBOW),
+        leftWrist: get(MOVENET_KEYPOINTS.LEFT_WRIST),
+        rightWrist: get(MOVENET_KEYPOINTS.RIGHT_WRIST),
+        leftHip: get(MOVENET_KEYPOINTS.LEFT_HIP),
+        rightHip: get(MOVENET_KEYPOINTS.RIGHT_HIP),
+        leftKnee: get(MOVENET_KEYPOINTS.LEFT_KNEE),
+        rightKnee: get(MOVENET_KEYPOINTS.RIGHT_KNEE),
+        leftAnkle: get(MOVENET_KEYPOINTS.LEFT_ANKLE),
+        rightAnkle: get(MOVENET_KEYPOINTS.RIGHT_ANKLE),
     };
 }
 
 /**
- * Hook to create the frame processor
+ * Hook to load the MoveNet model and create the frame processor
  */
 export function usePushUpPoseProcessor(onPoseDetected: (pose: PushUpPose) => void) {
+    // Load the MoveNet TFLite model
+    const modelResult = useTensorflowModel(require('@/assets/models/movenet.tflite'));
+
+    // Store model in a shared value for worklet access
+    const modelRef = useSharedValue<TensorflowModel | null>(null);
+
+    // Get the resize plugin
+    const { resize } = useResizePlugin();
+
+    // Update shared value when model loads
+    useEffect(() => {
+        if (modelResult.state === 'loaded' && modelResult.model) {
+            modelRef.value = modelResult.model;
+            console.log('✅ MoveNet model loaded successfully');
+        } else if (modelResult.state === 'error') {
+            console.error('❌ Failed to load MoveNet model:', modelResult.error);
+        }
+    }, [modelResult, modelRef]);
+
     // Create a runOnJS wrapper for the callback
     const runOnJS = Worklets.createRunOnJS(onPoseDetected);
 
     return useFrameProcessor((frame) => {
         'worklet';
 
-        // Run detection
-        const { poses } = detectPose(frame, {
-            mode: 'stream', // optimized for video stream
-            autoScale: true,
-        });
-
-        // We only care about the first person detected
-        if (poses && poses.length > 0) {
-            const rawPose = poses[0];
-            const pushUpPose = mapToPushUpPose(rawPose, frame.timestamp);
-
-            if (pushUpPose) {
-                runOnJS(pushUpPose);
-            }
+        const model = modelRef.value;
+        if (model == null) {
+            // Model not loaded yet
+            return;
         }
-    }, [runOnJS]);
+
+        try {
+            // 1. Resize frame to 192x192x3 (RGB) using vision-camera-resize-plugin
+            const resized = resize(frame, {
+                scale: {
+                    width: MODEL_INPUT_SIZE,
+                    height: MODEL_INPUT_SIZE,
+                },
+                pixelFormat: 'rgb',
+                dataType: 'uint8',
+            });
+
+            // 2. Run MoveNet inference synchronously
+            // MoveNet expects input of shape [1, 192, 192, 3]
+            // and outputs [1, 1, 17, 3] (17 keypoints with y, x, confidence)
+            const outputs = model.runSync([resized]);
+
+            if (outputs && outputs.length > 0) {
+                // 3. Get the output buffer
+                const outputData = outputs[0];
+
+                // 4. Parse output to keypoints
+                const keypoints = parseOutput(
+                    outputData.buffer,
+                    frame.width,
+                    frame.height
+                );
+
+                // 5. Map to PushUpPose
+                const pushUpPose = mapToPushUpPose(keypoints, Date.now());
+
+                if (pushUpPose) {
+                    runOnJS(pushUpPose);
+                }
+            }
+        } catch (_error) {
+            // Silently handle errors in frame processor
+            // Logging would be too verbose at 30fps
+        }
+    }, [resize, runOnJS, modelRef]);
 }
+
+// Re-export mapToPushUpPose for testing if needed
+export { mapToPushUpPose };
+
