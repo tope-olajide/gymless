@@ -1,61 +1,102 @@
+import { Keypoint, PushUpPose } from '@/types';
+import { Pose, PoseLandmark, detectPose } from '@scottjgilroy/react-native-vision-camera-v4-pose-detection';
+import { useFrameProcessor } from 'react-native-vision-camera';
+import { Worklets } from 'react-native-worklets-core';
+
 /**
  * Native Pose Detector for Android
- * Uses expo-camera for push-up pose detection
- * 
- * Note: Full ML Kit integration would require custom native modules.
- * For now, this is a stub that we'll enhance with camera-based detection.
+ * Uses @scottjgilroy/react-native-vision-camera-v4-pose-detection (ML Kit)
  */
 
-import { PushUpPose } from '@/types';
+// Mapping from ML Kit Pose Landmark Index to our PushUpPose keys
+// See: https://developers.google.com/ml-kit/vision/pose-detection/landmarks
+const MLKIT_LANDMARKS = {
+    NOSE: 0,
+    LEFT_SHOULDER: 11,
+    RIGHT_SHOULDER: 12,
+    LEFT_ELBOW: 13,
+    RIGHT_ELBOW: 14,
+    LEFT_WRIST: 15,
+    RIGHT_WRIST: 16,
+    LEFT_HIP: 23,
+    RIGHT_HIP: 24,
+    LEFT_KNEE: 25,
+    RIGHT_KNEE: 26,
+    LEFT_ANKLE: 27,
+    RIGHT_ANKLE: 28,
+};
 
-export class NativePoseDetector {
-    private isInitialized: boolean = false;
+/**
+ * Maps a single ML Kit landmark to our Keypoint interface
+ */
+function mapLandmark(landmark: PoseLandmark): Keypoint {
+    'worklet';
+    return {
+        x: landmark.x,
+        y: landmark.y,
+        confidence: landmark.confidence,
+    };
+}
 
-    /**
-     * Initialize the native pose detector
-     * This would normally set up ML Kit or similar
-     */
-    async initialize(): Promise<boolean> {
-        try {
-            // In a full implementation, this would:
-            // 1. Load ML Kit models
-            // 2. Initialize camera frame processor
-            // 3. Set up landmarks streaming
+/**
+ * Maps the raw ML Kit pose to our PushUpPose interface
+ */
+export function mapToPushUpPose(pose: Pose, timestamp: number): PushUpPose | null {
+    'worklet';
+    if (!pose || !pose.landmarks) return null;
 
-            this.isInitialized = true;
-            console.log('✅ NativePoseDetector initialized (stub)');
-            return true;
-        } catch (error) {
-            console.error('❌ Failed to initialize NativePoseDetector:', error);
-            this.isInitialized = false;
-            return false;
+    const landmarks = pose.landmarks;
+
+    // Helper to get landmark safely
+    const get = (index: number): Keypoint => {
+        const kp = landmarks[index];
+        // If landmark is missing, return low confidence
+        if (!kp) return { x: 0, y: 0, confidence: 0 };
+        return mapLandmark(kp);
+    };
+
+    return {
+        timestamp,
+        nose: get(MLKIT_LANDMARKS.NOSE),
+        leftShoulder: get(MLKIT_LANDMARKS.LEFT_SHOULDER),
+        rightShoulder: get(MLKIT_LANDMARKS.RIGHT_SHOULDER),
+        leftElbow: get(MLKIT_LANDMARKS.LEFT_ELBOW),
+        rightElbow: get(MLKIT_LANDMARKS.RIGHT_ELBOW),
+        leftWrist: get(MLKIT_LANDMARKS.LEFT_WRIST),
+        rightWrist: get(MLKIT_LANDMARKS.RIGHT_WRIST),
+        leftHip: get(MLKIT_LANDMARKS.LEFT_HIP),
+        rightHip: get(MLKIT_LANDMARKS.RIGHT_HIP),
+        leftKnee: get(MLKIT_LANDMARKS.LEFT_KNEE),
+        rightKnee: get(MLKIT_LANDMARKS.RIGHT_KNEE),
+        leftAnkle: get(MLKIT_LANDMARKS.LEFT_ANKLE),
+        rightAnkle: get(MLKIT_LANDMARKS.RIGHT_ANKLE),
+    };
+}
+
+/**
+ * Hook to create the frame processor
+ */
+export function usePushUpPoseProcessor(onPoseDetected: (pose: PushUpPose) => void) {
+    // Create a runOnJS wrapper for the callback
+    const runOnJS = Worklets.createRunOnJS(onPoseDetected);
+
+    return useFrameProcessor((frame) => {
+        'worklet';
+
+        // Run detection
+        const { poses } = detectPose(frame, {
+            mode: 'stream', // optimized for video stream
+            autoScale: true,
+        });
+
+        // We only care about the first person detected
+        if (poses && poses.length > 0) {
+            const rawPose = poses[0];
+            const pushUpPose = mapToPushUpPose(rawPose, frame.timestamp);
+
+            if (pushUpPose) {
+                runOnJS(pushUpPose);
+            }
         }
-    }
-
-    /**
-     * Process camera frame for pose detection
-     * In full implementation, this would use ML Kit frame processor
-     */
-    async processFrame(frameData: any): Promise<PushUpPose | null> {
-        if (!this.isInitialized) {
-            return null;
-        }
-
-        // Stub: would process actual camera frames here
-        return null;
-    }
-
-    /**
-     * Cleanup resources
-     */
-    async dispose(): Promise<void> {
-        this.isInitialized = false;
-    }
-
-    /**
-     * Check if detector is ready
-     */
-    isReady(): boolean {
-        return this.isInitialized;
-    }
+    }, [runOnJS]);
 }

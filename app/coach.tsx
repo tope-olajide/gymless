@@ -1,9 +1,14 @@
 import { PushUpAnalyzer } from '@/services/pushup/PushUpAnalyzer';
 import { Keypoint, PushUpPose } from '@/types';
-import { CameraType, CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraType, useCameraPermissions } from 'expo-camera'; // Renamed to avoid specific conflict if needed, though they are different libs
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+
+// Native Imports (will likely be mocked/ignored on web bundle, but we validly import them for source code)
+import { usePushUpPoseProcessor } from '@/services/pose/PoseDetector.native';
+import { Canvas, Circle, Line, vec } from '@shopify/react-native-skia';
+import { Camera, useCameraDevice } from 'react-native-vision-camera';
 
 // Debug status component
 function DebugOverlay({
@@ -13,6 +18,9 @@ function DebugOverlay({
     status: string;
     poseData: { keypoints: number; confidence: number } | null;
 }) {
+    // Only render debug overlay for Web or if explicitly enabled
+    if (Platform.OS !== 'web') return null;
+
     return (
         <div style={{
             position: 'absolute',
@@ -37,6 +45,119 @@ function DebugOverlay({
         </div>
     );
 }
+
+// Native Camera Component with Vision Camera + Skia
+function NativeCameraView({
+    isDetecting,
+    onPoseDetected
+}: {
+    isDetecting: boolean;
+    onPoseDetected: (pose: PushUpPose) => void;
+}) {
+    const device = useCameraDevice('front');
+    const [latestPose, setLatestPose] = useState<PushUpPose | null>(null);
+    const [status, setStatus] = useState('Camera Ready');
+
+    // Wrapper to update local state for drawing
+    const onPose = useCallback((pose: PushUpPose) => {
+        if (isDetecting) {
+            setLatestPose(pose);
+            onPoseDetected(pose);
+        }
+    }, [isDetecting, onPoseDetected]);
+
+    // Use our custom frame processor hook
+    const frameProcessor = usePushUpPoseProcessor(onPose);
+
+    if (!device) {
+        return (
+            <View style={styles.center}>
+                <Text style={styles.text}>Finding Camera...</Text>
+            </View>
+        );
+    }
+
+    return (
+        <View style={StyleSheet.absoluteFill}>
+            <Camera
+                style={StyleSheet.absoluteFill}
+                device={device}
+                isActive={true} // Keep camera active to show feed
+                frameProcessor={isDetecting ? frameProcessor : undefined}
+                pixelFormat="yuv" // Recommended for ML Kit
+            />
+
+            {/* Skia Overlay */}
+            <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+                {latestPose && isDetecting && (
+                    <>
+                        {/* Skeleton Lines */}
+                        <SkeletonLine start={latestPose.leftShoulder} end={latestPose.rightShoulder} />
+                        <SkeletonLine start={latestPose.leftShoulder} end={latestPose.leftElbow} />
+                        <SkeletonLine start={latestPose.leftElbow} end={latestPose.leftWrist} />
+                        <SkeletonLine start={latestPose.rightShoulder} end={latestPose.rightElbow} />
+                        <SkeletonLine start={latestPose.rightElbow} end={latestPose.rightWrist} />
+                        <SkeletonLine start={latestPose.leftShoulder} end={latestPose.leftHip} />
+                        <SkeletonLine start={latestPose.rightShoulder} end={latestPose.rightHip} />
+                        <SkeletonLine start={latestPose.leftHip} end={latestPose.rightHip} />
+                        <SkeletonLine start={latestPose.leftHip} end={latestPose.leftKnee} />
+                        <SkeletonLine start={latestPose.leftKnee} end={latestPose.leftAnkle} />
+                        <SkeletonLine start={latestPose.rightHip} end={latestPose.rightKnee} />
+                        <SkeletonLine start={latestPose.rightKnee} end={latestPose.rightAnkle} />
+
+                        {/* Keypoints */}
+                        <SkeletonPoint point={latestPose.nose} />
+                        <SkeletonPoint point={latestPose.leftShoulder} />
+                        <SkeletonPoint point={latestPose.rightShoulder} />
+                        <SkeletonPoint point={latestPose.leftElbow} />
+                        <SkeletonPoint point={latestPose.rightElbow} />
+                        <SkeletonPoint point={latestPose.leftWrist} />
+                        <SkeletonPoint point={latestPose.rightWrist} />
+                        <SkeletonPoint point={latestPose.leftHip} />
+                        <SkeletonPoint point={latestPose.rightHip} />
+                        <SkeletonPoint point={latestPose.leftKnee} />
+                        <SkeletonPoint point={latestPose.rightKnee} />
+                        <SkeletonPoint point={latestPose.leftAnkle} />
+                        <SkeletonPoint point={latestPose.rightAnkle} />
+                    </>
+                )}
+            </Canvas>
+
+            {/* instructions if not detecting */}
+            {!isDetecting && (
+                <View style={styles.overlayCenter}>
+                    <Text style={styles.overlayText}>Press START to track</Text>
+                </View>
+            )}
+        </View>
+    );
+}
+
+// Skia Helper Components
+const SkeletonLine = ({ start, end }: { start: Keypoint; end: Keypoint }) => {
+    if (start.confidence < 0.2 || end.confidence < 0.2) return null;
+    return (
+        <Line
+            p1={vec(start.x, start.y)}
+            p2={vec(end.x, end.y)}
+            color="#00ff00"
+            strokeWidth={4}
+            style="stroke"
+            strokeCap="round"
+        />
+    );
+};
+
+const SkeletonPoint = ({ point }: { point: Keypoint }) => {
+    if (point.confidence < 0.2) return null;
+    return (
+        <React.Fragment>
+            <Circle cx={point.x} cy={point.y} r={8} color="white" />
+            <Circle cx={point.x} cy={point.y} r={6} color="#00ff00" />
+        </React.Fragment>
+    );
+};
+
 
 // Web-specific camera component with pose detection
 function WebCameraView({
@@ -344,6 +465,7 @@ export default function CoachMode() {
 
     // On web, we handle our own camera permissions
     if (Platform.OS !== 'web' && !permission) {
+        // Native permission check (might need Vision Camera specific check but expo-camera handles manifest)
         return (
             <View style={styles.container}>
                 <Text style={styles.message}>Loading camera permissions...</Text>
@@ -399,12 +521,10 @@ export default function CoachMode() {
                         onPoseDetected={handlePoseDetected}
                     />
                 ) : (
-                    <CameraView style={styles.camera} facing={facing}>
-                        <Text style={styles.nativeNote}>
-                            Native pose detection coming soon!{'\n'}
-                            Use web version for now.
-                        </Text>
-                    </CameraView>
+                    <NativeCameraView
+                        isDetecting={isDetecting}
+                        onPoseDetected={handlePoseDetected}
+                    />
                 )}
 
                 {/* Overlay UI */}
@@ -464,6 +584,15 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#000',
+    },
+    center: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    text: {
+        color: '#fff',
+        fontSize: 16,
     },
     header: {
         flexDirection: 'row',
@@ -559,6 +688,20 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'transparent',
         pointerEvents: 'box-none',
+        zIndex: 50,
+    },
+    overlayCenter: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+        pointerEvents: 'none',
+    },
+    overlayText: {
+        color: 'white',
+        fontSize: 24,
+        fontWeight: 'bold',
+        textShadowColor: 'black',
+        textShadowRadius: 10,
     },
     topStats: {
         flexDirection: 'row',
@@ -609,6 +752,7 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         alignItems: 'center',
+        zIndex: 60,
     },
     startButton: {
         backgroundColor: '#00ff88',
@@ -638,6 +782,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0, 0, 0, 0.9)',
         paddingVertical: 12,
         alignItems: 'center',
+        zIndex: 10,
     },
     infoText: {
         fontSize: 14,
