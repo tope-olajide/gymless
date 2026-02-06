@@ -10,11 +10,13 @@ import { useResizePlugin } from 'vision-camera-resize-plugin';
  * Native Pose Detector for Android/iOS
  * Uses MoveNet Lightning (int8) via react-native-fast-tflite
  * 
- * The int8 model is optimized for uint8 RGB input which matches
- * what vision-camera-resize-plugin provides.
+ * CRITICAL: vision-camera-resize-plugin performs CENTER-CROP when resizing
+ * to a different aspect ratio. For a portrait frame resized to a square:
+ * - Full width is used
+ * - Top and bottom are cropped equally
  * 
- * IMPORTANT: Frame coordinates are in sensor orientation, not display orientation.
- * We use frame.orientation and frame.isMirrored to transform coordinates correctly.
+ * Model outputs [0,1] coordinates relative to the CROP, not the full frame.
+ * We must reverse this crop when mapping to screen coordinates.
  */
 
 // MoveNet Lightning keypoint indices (17 keypoints)
@@ -45,80 +47,101 @@ const MODEL_INPUT_SIZE = 192;
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
- * Transform coordinates from sensor orientation to display orientation
+ * Transform coordinates from model output space to screen space
  * 
- * MoveNet outputs normalized [0,1] coordinates in sensor orientation.
- * We need to transform them based on:
- * 1. Frame orientation (rotation relative to portrait)
- * 2. Whether the frame is mirrored (front camera)
- * 3. Screen dimensions
+ * The resize plugin center-crops the frame to a square before resizing to 192x192.
+ * For a portrait frame (height > width):
+ * - crop_size = frame_width (uses full width)
+ * - crop_y_offset = (frame_height - frame_width) / 2
+ * 
+ * Model outputs [0,1] coordinates relative to this crop.
+ * We need to:
+ * 1. Scale to crop dimensions
+ * 2. Add crop offset
+ * 3. Scale to screen dimensions
  */
-function transformCoordinates(
+function transformToScreenCoordinates(
     normalizedX: number,
     normalizedY: number,
-    orientation: string,
-    isMirrored: boolean,
+    frameWidth: number,
+    frameHeight: number,
     screenWidth: number,
-    screenHeight: number
+    screenHeight: number,
+    orientation: string,
+    isMirrored: boolean
 ): { x: number; y: number } {
     'worklet';
 
-    let x = normalizedX;
-    let y = normalizedY;
+    // For portrait orientation (height > width), the crop uses full width
+    // and crops equal amounts from top/bottom
+    const isPortrait = frameHeight > frameWidth;
+    const cropSize = isPortrait ? frameWidth : frameHeight;
 
-    // Apply rotation based on orientation
-    // The orientation indicates how the sensor is rotated relative to portrait
+    // Calculate crop offset
+    const cropOffsetX = isPortrait ? 0 : (frameWidth - cropSize) / 2;
+    const cropOffsetY = isPortrait ? (frameHeight - cropSize) / 2 : 0;
+
+    // Scale normalized [0,1] coordinates to crop coordinate space
+    let cropX = normalizedX * cropSize;
+    let cropY = normalizedY * cropSize;
+
+    // Add offset to get position in full frame
+    let frameX = cropX + cropOffsetX;
+    let frameY = cropY + cropOffsetY;
+
+    // Apply rotation based on frame orientation
+    // The frame.orientation tells us how the sensor is rotated
     switch (orientation) {
         case 'portrait':
-            // No rotation needed
+            // No rotation needed for portrait
             break;
         case 'portrait-upside-down':
             // 180 degree rotation
-            x = 1.0 - x;
-            y = 1.0 - y;
+            frameX = frameWidth - frameX;
+            frameY = frameHeight - frameY;
             break;
         case 'landscape-left':
-            // 90 degrees clockwise (sensor is rotated 90 CCW)
-            // Swap and adjust: newX = y, newY = 1 - x
-            const tempL = x;
-            x = y;
-            y = 1.0 - tempL;
+            // 90 degrees - swap and adjust
+            const tempL = frameX;
+            frameX = frameY;
+            frameY = frameHeight - tempL;
             break;
         case 'landscape-right':
-            // 90 degrees counter-clockwise (sensor is rotated 90 CW)
-            // Swap and adjust: newX = 1 - y, newY = x
-            const tempR = x;
-            x = 1.0 - y;
-            y = tempR;
+            // 270 degrees - swap and adjust
+            const tempR = frameX;
+            frameX = frameWidth - frameY;
+            frameY = tempR;
             break;
     }
 
     // Apply mirroring for front camera
     if (isMirrored) {
-        x = 1.0 - x;
+        frameX = frameWidth - frameX;
     }
 
-    // Scale to screen coordinates
-    return {
-        x: x * screenWidth,
-        y: y * screenHeight,
-    };
+    // Scale from frame coordinates to screen coordinates
+    const screenX = (frameX / frameWidth) * screenWidth;
+    const screenY = (frameY / frameHeight) * screenHeight;
+
+    return { x: screenX, y: screenY };
 }
 
 /**
- * Parse MoveNet output to keypoints with orientation handling
+ * Parse MoveNet output to keypoints with proper coordinate transformation
  * 
  * MoveNet outputs a tensor of shape [1, 1, 17, 3] containing:
  * - 17 keypoints
  * - Each keypoint has 3 values: [y, x, confidence]
- * - y and x are normalized coordinates [0, 1] in sensor orientation
+ * - y and x are normalized [0, 1] relative to the CENTER-CROPPED input
  */
 function parseOutput(
     output: ArrayBufferLike,
-    orientation: string,
-    isMirrored: boolean,
+    frameWidth: number,
+    frameHeight: number,
     screenWidth: number,
-    screenHeight: number
+    screenHeight: number,
+    orientation: string,
+    isMirrored: boolean
 ): Keypoint[] {
     'worklet';
     const keypoints: Keypoint[] = [];
@@ -126,25 +149,23 @@ function parseOutput(
 
     for (let i = 0; i < 17; i++) {
         const baseIdx = i * 3;
-        const normalizedY = data[baseIdx];
-        const normalizedX = data[baseIdx + 1];
+        const normalizedY = data[baseIdx];      // y comes first in MoveNet output
+        const normalizedX = data[baseIdx + 1];  // x comes second
         const confidence = data[baseIdx + 2];
 
-        // Transform from sensor coordinates to screen coordinates
-        const { x, y } = transformCoordinates(
+        // Transform from crop coordinates to screen coordinates
+        const { x, y } = transformToScreenCoordinates(
             normalizedX,
             normalizedY,
-            orientation,
-            isMirrored,
+            frameWidth,
+            frameHeight,
             screenWidth,
-            screenHeight
+            screenHeight,
+            orientation,
+            isMirrored
         );
 
-        keypoints.push({
-            x,
-            y,
-            confidence,
-        });
+        keypoints.push({ x, y, confidence });
     }
 
     return keypoints;
@@ -216,12 +237,11 @@ export function usePushUpPoseProcessor(onPoseDetected: (pose: PushUpPose) => voi
 
         const model = modelRef.value;
         if (model == null) {
-            // Model not loaded yet
             return;
         }
 
         try {
-            // 1. Resize frame to 192x192x3 (RGB) using vision-camera-resize-plugin
+            // 1. Resize frame to 192x192 (center-crop + scale)
             const resized = resize(frame, {
                 scale: {
                     width: MODEL_INPUT_SIZE,
@@ -231,24 +251,23 @@ export function usePushUpPoseProcessor(onPoseDetected: (pose: PushUpPose) => voi
                 dataType: 'uint8',
             });
 
-            // 2. Run MoveNet inference synchronously
+            // 2. Run MoveNet inference
             const outputs = model.runSync([resized]);
 
             if (outputs && outputs.length > 0) {
-                // 3. Get frame properties for coordinate transformation
-                const orientation = frame.orientation;
-                const isMirrored = frame.isMirrored;
-
-                // 4. Parse output to keypoints with orientation handling
+                // 3. Parse output with proper coordinate transformation
+                // Pass frame dimensions to account for center-crop
                 const keypoints = parseOutput(
                     outputs[0].buffer,
-                    orientation,
-                    isMirrored,
+                    frame.width,
+                    frame.height,
                     screenWidth.value,
-                    screenHeight.value
+                    screenHeight.value,
+                    frame.orientation,
+                    frame.isMirrored
                 );
 
-                // 5. Map to PushUpPose
+                // 4. Map to PushUpPose
                 const pushUpPose = mapToPushUpPose(keypoints, Date.now());
 
                 if (pushUpPose) {
@@ -261,6 +280,5 @@ export function usePushUpPoseProcessor(onPoseDetected: (pose: PushUpPose) => voi
     }, [resize, runOnJS, modelRef, screenWidth, screenHeight]);
 }
 
-// Re-export mapToPushUpPose for testing if needed
 export { mapToPushUpPose };
 
