@@ -4,34 +4,70 @@
     "slug": "gymless",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/adaptive-icon.png",
     "scheme": "gymless",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/adaptive-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
+      "bundleIdentifier": "com.gymless.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Gymless uses your camera to track exercise movements, count reps, and provide real-time form feedback."
+        "NSCameraUsageDescription": "Allow Gymless to access your camera for form analysis and motion coaching."
       }
     },
     "android": {
+      "package": "com.gymless.app",
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "RECORD_AUDIO"
       ],
-      "package": "com.theatomicshift.gymless"
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "bundler": "metro",
-      "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "output": "static",
+      "favicon": "./assets/adaptive-icon.png"
     },
     "plugins": [
       "expo-router",
-      "expo-font",
-      "expo-web-browser"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Gymless to use your camera for form analysis."
+        }
+      ],
+      "react-native-vision-camera",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "2.0.21",
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "packagingOptions": {
+              "pickFirst": [
+                "**/libc++_shared.so"
+              ]
+            }
+          }
+        }
+      ]
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "reactCompiler": true
     },
     "extra": {
       "router": {},
