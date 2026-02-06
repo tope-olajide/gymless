@@ -6,6 +6,7 @@ import {
     RunningMode,
     usePoseDetection,
     type PoseDetectionResultBundle,
+    type ViewCoordinator,
 } from 'react-native-mediapipe-posedetection';
 
 /**
@@ -13,14 +14,19 @@ import {
  * Uses MediaPipe Pose Detection - reliable, production-ready solution
  * 
  * MediaPipe provides 33 landmarks, we map to our 13 required keypoints.
+ * Landmarks come as normalized coordinates (0-1) and MUST be converted
+ * to screen pixel coordinates using the viewCoordinator.
  */
 
 /**
  * Convert MediaPipe pose landmarks to our PushUpPose format
+ * Uses viewCoordinator to convert normalized (0-1) coordinates to screen pixels
  */
 function convertToPushUpPose(
     landmarks: Array<{ x: number; y: number; z?: number; visibility?: number }>,
-    timestamp: number
+    timestamp: number,
+    viewCoordinator: ViewCoordinator | undefined,
+    frameDims: { width: number; height: number }
 ): PushUpPose | null {
     if (!landmarks || landmarks.length < 33) {
         return null;
@@ -32,9 +38,23 @@ function convertToPushUpPose(
             return { x: 0, y: 0, confidence: 0 };
         }
 
+        // Convert normalized coordinates to screen pixels
+        let x = landmark.x;
+        let y = landmark.y;
+
+        if (viewCoordinator) {
+            const converted = viewCoordinator.convertPoint(frameDims, { x: landmark.x, y: landmark.y });
+            x = converted.x;
+            y = converted.y;
+        } else {
+            // Fallback: manually scale if no viewCoordinator (shouldn't happen)
+            x = landmark.x * frameDims.width;
+            y = landmark.y * frameDims.height;
+        }
+
         return {
-            x: landmark.x,
-            y: landmark.y,
+            x,
+            y,
             confidence: landmark.visibility ?? 1.0,
         };
     };
@@ -72,7 +92,7 @@ export function usePushUpPoseProcessor(onPoseDetected: (pose: PushUpPose) => voi
     // Initialize MediaPipe pose detection with callbacks
     const solution = usePoseDetection(
         {
-            onResults: (result: PoseDetectionResultBundle) => {
+            onResults: (result: PoseDetectionResultBundle, viewCoordinator) => {
                 // DetectionResultBundle.results is an array
                 if (result.results && result.results.length > 0) {
                     // Each result has landmarks as a 2D array (for multiple people)
@@ -81,7 +101,16 @@ export function usePushUpPoseProcessor(onPoseDetected: (pose: PushUpPose) => voi
                     if (firstResult.landmarks && firstResult.landmarks.length > 0) {
                         // Get first person's landmarks
                         const landmarks = firstResult.landmarks[0];
-                        const pushUpPose = convertToPushUpPose(landmarks, Date.now());
+
+                        // Get frame dimensions using viewCoordinator
+                        const frameDims = viewCoordinator.getFrameDims(result);
+
+                        const pushUpPose = convertToPushUpPose(
+                            landmarks,
+                            Date.now(),
+                            viewCoordinator,
+                            frameDims
+                        );
 
                         if (pushUpPose) {
                             callbackRef.current(pushUpPose);

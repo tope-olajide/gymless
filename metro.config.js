@@ -4,7 +4,7 @@ const { getDefaultConfig } = require('expo/metro-config');
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 
-// Add tflite to asset extensions for react-native-fast-tflite
-config.resolver.assetExts.push('tflite');
+// Add task to asset extensions for react-native-mediapipe-posedetection
+config.resolver.assetExts.push('task');
 
 module.exports = config;

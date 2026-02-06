@@ -8,15 +8,14 @@
     "scheme": "gymless",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-
     "splash": {
       "image": "./assets/adaptive-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
-
-    "assetBundlePatterns": ["**/*"],
-
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.gymless.app",
@@ -24,7 +23,6 @@
         "NSCameraUsageDescription": "Allow Gymless to access your camera for form analysis and motion coaching."
       }
     },
-
     "android": {
       "package": "com.gymless.app",
       "permissions": [
@@ -37,25 +35,20 @@
       },
       "edgeToEdgeEnabled": true
     },
-
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/adaptive-icon.png"
     },
-
     "plugins": [
       "expo-router",
-
       [
         "expo-camera",
         {
           "cameraPermission": "Allow Gymless to use your camera for form analysis."
         }
       ],
-
       "react-native-vision-camera",
-
       [
         "expo-build-properties",
         {
@@ -72,12 +65,10 @@
         }
       ]
     ],
-
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
       "router": {},
       "eas": {
