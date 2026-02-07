@@ -2,16 +2,65 @@
  * GeminiService
  * 
  * AI-powered tips, coaching, and session summaries using the Gemini API.
+ * Supports Gemini 2.5 Flash (stable) and Gemini 3 Flash Preview (agentic vision).
  */
 
 import Constants from 'expo-constants';
 import { Exercise, getExerciseById } from '../../data/exercises';
-import { UserPreferences } from '../storage/StorageService';
+import { storageService, UserPreferences } from '../storage/StorageService';
 
 // Get Gemini API key from env
 const GEMINI_KEY = Constants.expoConfig?.extra?.geminiApiKey as string | undefined;
+const BASE_URL = 'https://generativelanguage.googleapis.com';
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+// ============================================================
+// RATE LIMITING: Prevent quota exhaustion (Free tier: 15 RPM)
+// ============================================================
+const MIN_REQUEST_INTERVAL_MS = 4000; // 4 seconds between requests (15 RPM)
+let lastRequestTime = 0;
+let requestCount = 0;
+
+// Supported models
+export const AI_MODELS = {
+    'gemini-2.5-flash': {
+        id: 'gemini-2.5-flash',
+        name: 'Gemini 2.5 Flash',
+        description: 'Fast, reliable, and production-stable.',
+        apiVersion: 'v1',
+        available: true,
+    },
+    'gemini-3-flash-preview': {
+        id: 'gemini-3-flash-preview',
+        name: 'Gemini 3 Flash Preview',
+        description: 'Next-gen reasoning and Agentic Vision for movement coaching.',
+        apiVersion: 'v1beta',
+        available: true,
+    },
+    // Coming Soon models
+    'gpt-4o': {
+        id: 'gpt-4o',
+        name: 'GPT-4o',
+        description: 'OpenAI multimodal reasoning.',
+        apiVersion: '',
+        available: false,
+    },
+    'claude-3.5-sonnet': {
+        id: 'claude-3.5-sonnet',
+        name: 'Claude 3.5 Sonnet',
+        description: 'Anthropic agentic vision analysis.',
+        apiVersion: '',
+        available: false,
+    },
+    'gemini-2.5-pro': {
+        id: 'gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro',
+        description: 'Advanced reasoning (Tier-2 API key required).',
+        apiVersion: 'v1',
+        available: false,
+    },
+} as const;
+
+export type AIModelId = keyof typeof AI_MODELS;
 
 interface GeminiResponse {
     candidates?: {
@@ -25,30 +74,53 @@ interface GeminiResponse {
 }
 
 /**
- * Generate content using Gemini API
+ * Generate content using Gemini API with dynamic model selection
+ * Rate limited to prevent quota exhaustion
  */
-async function generateContent(prompt: string): Promise<string | null> {
+async function generateContent(prompt: string, modelOverride?: string): Promise<string | null> {
     if (!GEMINI_KEY) {
         console.warn('Gemini API key not configured');
         return null;
     }
 
+    // Rate limiting check
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL_MS) {
+        console.log(`[GeminiService] Rate limited. Wait ${MIN_REQUEST_INTERVAL_MS - timeSinceLastRequest}ms`);
+        return null; // Skip this request to avoid quota
+    }
+
+    lastRequestTime = now;
+    requestCount++;
+
+    // Get user's preferred model or use override
+    const model = modelOverride || await storageService.getAIModelPreference();
+    const isG3 = model.includes('gemini-3');
+    const apiVersion = isG3 ? 'v1beta' : 'v1';
+    const url = `${BASE_URL}/${apiVersion}/models/${model}:generateContent?key=${GEMINI_KEY}`;
+
+    // Build request body with model-specific config
+    // IMPORTANT: Use camelCase for all field names in generationConfig
+    const body: Record<string, unknown> = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+            temperature: 1.0,
+            maxOutputTokens: 256,
+            topP: 0.8,
+            // Gemini 3 exclusive for visual analysis
+            ...(isG3 && { mediaResolution: 'high' }),
+        },
+    };
+
     try {
-        const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_KEY}`, {
+        const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: prompt }],
-                }],
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 256,
-                    topP: 0.8,
-                },
-            }),
+            body: JSON.stringify(body),
         });
 
         const data: GeminiResponse = await response.json();
@@ -312,4 +384,5 @@ export const geminiService = {
     getModificationSuggestion,
     isGeminiAvailable,
     getAccountabilityNudge,
+    AI_MODELS,
 };

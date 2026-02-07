@@ -18,6 +18,7 @@ const KEYS = {
     ACHIEVEMENTS: '@gymless/achievements',
     STREAK_DATA: '@gymless/streak_data',
     LAST_WORKOUT_DATE: '@gymless/last_workout_date',
+    AI_MODEL_PREFERENCE: '@gymless/ai_model_preference',
 };
 
 // Types
@@ -306,6 +307,23 @@ class StorageService {
         });
 
         return stats;
+    }
+
+    // ==========================================
+    // AI MODEL PREFERENCE
+    // ==========================================
+
+    async getAIModelPreference(): Promise<string> {
+        try {
+            const value = await AsyncStorage.getItem(KEYS.AI_MODEL_PREFERENCE);
+            return value || 'gemini-2.5-flash'; // Default to stable model
+        } catch {
+            return 'gemini-2.5-flash';
+        }
+    }
+
+    async setAIModelPreference(model: string): Promise<void> {
+        await AsyncStorage.setItem(KEYS.AI_MODEL_PREFERENCE, model);
     }
 
     // ==========================================

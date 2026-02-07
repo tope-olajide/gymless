@@ -28,6 +28,10 @@ export interface PushUpPose {
     leftAnkle: Keypoint;
     rightAnkle: Keypoint;
 
+    // Heel positions (for calf raises)
+    leftHeel: Keypoint;
+    rightHeel: Keypoint;
+
     // Head position
     nose: Keypoint;
 }

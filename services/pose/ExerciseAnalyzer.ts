@@ -51,6 +51,14 @@ export interface AnalysisSession {
     currentRepStartTime: number;
     formScores: number[];
     holdStartTime?: number;
+    readyToCountRep: boolean; // Two-stage gate: must be in 'down' before counting
+    // Phase debouncing - prevents flickering
+    phaseStableFrames: number; // Frames phase has been stable
+    confirmedPhase: ExercisePhase; // Only changes after debounce
+    phaseJustChanged: boolean; // True on frame where phase transitions
+    // Hysteresis - prevents signal jitter
+    lastRepTime: number; // Cooldown after rep
+    lowestAngle: number; // Track lowest angle reached in current cycle
 }
 
 /**
@@ -111,6 +119,14 @@ export class ExerciseAnalyzer {
             reps: [],
             currentRepStartTime: Date.now(),
             formScores: [],
+            readyToCountRep: false,
+            // Phase debouncing init
+            phaseStableFrames: 0,
+            confirmedPhase: 'start',
+            phaseJustChanged: false,
+            // Hysteresis init
+            lastRepTime: 0,
+            lowestAngle: 180,
         };
     }
 
@@ -213,11 +229,14 @@ export class ExerciseAnalyzer {
     /**
      * Analyze a single pose frame
      */
-    analyze(pose: PoseData): PhaseResult & { repCompleted: boolean; holdSeconds?: number } {
+    analyze(pose: PoseData): PhaseResult & { repCompleted: boolean; holdSeconds?: number; phaseJustChanged: boolean; isArmed: boolean } {
+        // Track rep count before analysis to detect actual rep completion
+        const repCountBefore = this.session.repCount;
+
         // Check if we have required landmarks
         if (!hasRequiredLandmarks(pose, this.exercise.requiredLandmarks as string[])) {
             return {
-                phase: this.session.currentPhase,
+                phase: this.session.confirmedPhase,
                 confidence: 0,
                 formFeedback: [{
                     isCorrect: false,
@@ -226,6 +245,8 @@ export class ExerciseAnalyzer {
                 }],
                 formScore: 0,
                 repCompleted: false,
+                phaseJustChanged: false,
+                isArmed: this.session.readyToCountRep,
             };
         }
 
@@ -249,19 +270,81 @@ export class ExerciseAnalyzer {
 
         formScore = Math.max(0, formScore);
 
-        // Detect rep completion
-        let repCompleted = false;
-        const wasUp = this.session.lastPhase === 'up';
-        const wasDown = this.session.lastPhase === 'down';
-        const isUp = phase === 'up';
-        const isDown = phase === 'down';
+        // ============================================================
+        // PHASE DEBOUNCING: Prevent flickering between phases
+        // Phase must be stable for DEBOUNCE_FRAMES before we confirm it
+        // ============================================================
+        const DEBOUNCE_FRAMES = 3;
 
-        // Rep counting logic for different exercise types
+        // Reset phase flag each frame
+        this.session.phaseJustChanged = false;
+
+        if (phase === this.session.currentPhase) {
+            // Phase unchanged - increment stability counter
+            this.session.phaseStableFrames++;
+        } else {
+            // Phase changed - reset counter and update current
+            this.session.phaseStableFrames = 1;
+            this.session.lastPhase = this.session.currentPhase;
+            this.session.currentPhase = phase;
+        }
+
+        // Only confirm phase after it's been stable for DEBOUNCE_FRAMES
+        const previousConfirmed = this.session.confirmedPhase;
+        if (this.session.phaseStableFrames >= DEBOUNCE_FRAMES &&
+            phase !== this.session.confirmedPhase) {
+            this.session.confirmedPhase = phase;
+            this.session.phaseJustChanged = true;
+        }
+
+        // ============================================================
+        // REP COUNTING WITH HYSTERESIS
+        // Uses actual angle values with dead zone to prevent jitter
+        // ============================================================
         if (this.exercise.type === 'reps') {
-            // For rep exercises: down -> up = 1 rep
-            if (wasDown && isUp) {
-                repCompleted = true;
+            const now = Date.now();
+
+            // Get primary joint angle (first angle check of 'down' phase)
+            const downPhase = this.exercise.phases.find(p => p.name === 'down');
+            const primaryCheck = downPhase?.angleChecks[0];
+            let currentAngle = 180; // Default to standing
+
+            if (primaryCheck) {
+                const joint = pose.landmarks[primaryCheck.joint];
+                const connected1 = pose.landmarks[primaryCheck.connectedTo[0]];
+                const connected2 = pose.landmarks[primaryCheck.connectedTo[1]];
+
+                if (joint && connected1 && connected2) {
+                    currentAngle = calculateAngle(connected1, joint, connected2);
+                }
+            }
+
+            // Track lowest angle during descent
+            if (currentAngle < this.session.lowestAngle) {
+                this.session.lowestAngle = currentAngle;
+            }
+
+            // HYSTERESIS THRESHOLDS (with dead zone between 90-155)
+            const ARM_THRESHOLD = 90;   // Must go below this to arm
+            const FIRE_THRESHOLD = 155; // Must go above this to fire
+            const REP_COOLDOWN_MS = 500; // Minimum time between reps
+
+            // Stage 1: ARM when angle goes below threshold (deep in squat)
+            if (currentAngle < ARM_THRESHOLD && !this.session.readyToCountRep) {
+                this.session.readyToCountRep = true;
+            }
+
+            // Stage 2: FIRE when angle goes above threshold AND armed AND cooldown passed
+            const cooldownPassed = (now - this.session.lastRepTime) > REP_COOLDOWN_MS;
+
+            if (this.session.readyToCountRep &&
+                currentAngle > FIRE_THRESHOLD &&
+                cooldownPassed) {
+
                 this.session.repCount++;
+                this.session.readyToCountRep = false; // DISARM
+                this.session.lastRepTime = now;       // Start cooldown
+                this.session.lowestAngle = 180;       // Reset for next cycle
 
                 const repDuration = Date.now() - this.session.currentRepStartTime;
                 this.session.reps.push({
@@ -270,7 +353,6 @@ export class ExerciseAnalyzer {
                     duration: repDuration,
                     feedback: formFeedback.map((f) => f.message),
                 });
-
                 this.session.currentRepStartTime = Date.now();
             }
         }
@@ -278,12 +360,6 @@ export class ExerciseAnalyzer {
         // Track form score
         if (formScore > 0) {
             this.session.formScores.push(formScore);
-        }
-
-        // Update phase tracking
-        if (phase !== this.session.currentPhase) {
-            this.session.lastPhase = this.session.currentPhase;
-            this.session.currentPhase = phase;
         }
 
         // Handle hold exercises
@@ -297,13 +373,18 @@ export class ExerciseAnalyzer {
             this.session.holdStartTime = undefined;
         }
 
+        // Rep was completed this frame if count increased
+        const repCompleted = this.session.repCount > repCountBefore;
+
         return {
-            phase,
+            phase: this.session.confirmedPhase, // Return debounced phase
             confidence,
             formFeedback,
             formScore,
             repCompleted,
             holdSeconds,
+            phaseJustChanged: this.session.phaseJustChanged,
+            isArmed: this.session.readyToCountRep,
         };
     }
 
@@ -323,6 +404,14 @@ export class ExerciseAnalyzer {
         this.session.lastPhase = null;
         this.session.currentRepStartTime = Date.now();
         this.session.holdStartTime = undefined;
+        this.session.readyToCountRep = false;
+        // Reset phase debouncing
+        this.session.phaseStableFrames = 0;
+        this.session.confirmedPhase = 'start';
+        this.session.phaseJustChanged = false;
+        // Reset hysteresis
+        this.session.lastRepTime = 0;
+        this.session.lowestAngle = 180;
     }
 
     /**

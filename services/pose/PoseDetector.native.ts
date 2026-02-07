@@ -74,6 +74,8 @@ function convertToPushUpPose(
         rightKnee: getKeypoint(KnownPoseLandmarks.rightKnee),
         leftAnkle: getKeypoint(KnownPoseLandmarks.leftAnkle),
         rightAnkle: getKeypoint(KnownPoseLandmarks.rightAnkle),
+        leftHeel: getKeypoint(KnownPoseLandmarks.leftHeel),
+        rightHeel: getKeypoint(KnownPoseLandmarks.rightHeel),
     };
 }
 

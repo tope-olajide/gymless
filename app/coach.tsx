@@ -439,6 +439,12 @@ export default function CoachMode() {
     const [formScore, setFormScore] = useState(100);
     const [phase, setPhase] = useState<'up' | 'down' | 'transition' | 'hold' | 'start'>('start');
 
+    // Target tracking & completion
+    const [targetReps, setTargetReps] = useState(10);
+    const [showCelebration, setShowCelebration] = useState(false);
+    const [isArmed, setIsArmed] = useState(false); // Yellow glow when down
+    const [repJustCounted, setRepJustCounted] = useState(false); // Green flash when counted
+
     // AI coaching
     const [aiTip, setAiTip] = useState<string>('');
     const [aiCoaching, setAiCoaching] = useState<string>('');
@@ -457,6 +463,8 @@ export default function CoachMode() {
     const analyzerRef = useRef<ExerciseAnalyzer | null>(null);
     const sessionStartRef = useRef<number>(0);
     const lastCoachingRef = useRef<number>(0);
+    const lastPhaseTimeRef = useRef<number>(Date.now()); // For idle detection
+    const lastPhaseRef = useRef<string>('start'); // Track phase changes for voice cues
 
     // Load preferences and exercise
     useEffect(() => {
@@ -492,60 +500,122 @@ export default function CoachMode() {
     };
 
     const handlePoseDetected = useCallback((pose: PushUpPose) => {
-        if (!analyzerRef.current || !isDetecting) return;
+        if (!analyzerRef.current || !isDetecting || showCelebration) return;
 
         // Convert PushUpPose to PoseData format
         const poseData: PoseData = {
             landmarks: {
                 nose: pose.nose,
-                left_shoulder: pose.leftShoulder,
-                right_shoulder: pose.rightShoulder,
-                left_elbow: pose.leftElbow,
-                right_elbow: pose.rightElbow,
-                left_wrist: pose.leftWrist,
-                right_wrist: pose.rightWrist,
-                left_hip: pose.leftHip,
-                right_hip: pose.rightHip,
-                left_knee: pose.leftKnee,
-                right_knee: pose.rightKnee,
-                left_ankle: pose.leftAnkle,
-                right_ankle: pose.rightAnkle,
+                leftShoulder: pose.leftShoulder,
+                rightShoulder: pose.rightShoulder,
+                leftElbow: pose.leftElbow,
+                rightElbow: pose.rightElbow,
+                leftWrist: pose.leftWrist,
+                rightWrist: pose.rightWrist,
+                leftHip: pose.leftHip,
+                rightHip: pose.rightHip,
+                leftKnee: pose.leftKnee,
+                rightKnee: pose.rightKnee,
+                leftAnkle: pose.leftAnkle,
+                rightAnkle: pose.rightAnkle,
+                leftHeel: pose.leftHeel,
+                rightHeel: pose.rightHeel,
             },
             timestamp: Date.now(),
         };
 
         const result = analyzerRef.current.analyze(poseData);
+        const now = Date.now();
 
         setFormScore(result.formScore);
         setPhase(result.phase as any);
 
-        if (result.repCompleted) {
-            setRepCount(prev => prev + 1);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        // Update armed state for visual feedback (yellow glow)
+        setIsArmed(result.isArmed);
 
-            // Announce rep if divisible by 5
-            if (analyzerRef.current.getSessionStats().repCount % 5 === 0) {
-                speak(`${analyzerRef.current.getSessionStats().repCount} reps`);
+        // ============================================================
+        // REP COUNTING: Use analyzer's repCompleted flag directly
+        // This is now based on actual hysteresis angle thresholds
+        // ============================================================
+        if (result.repCompleted) {
+            const currentReps = analyzerRef.current.getSessionStats().repCount;
+            setRepCount(currentReps);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            lastPhaseTimeRef.current = now;
+
+            // Green flash effect - clear after 300ms
+            setRepJustCounted(true);
+            setTimeout(() => setRepJustCounted(false), 300);
+
+            // Check for workout completion
+            if (currentReps >= targetReps) {
+                // 🎉 TARGET HIT - CELEBRATE!
+                setShowCelebration(true);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                speak(`Amazing! ${currentReps} out of ${targetReps}! You crushed it!`);
+                return;
             }
+
+            // Announce rep with encouragement
+            const remaining = targetReps - currentReps;
+            if (remaining <= 3 && remaining > 0) {
+                speak(`${currentReps}! Only ${remaining} more!`);
+            } else if (currentReps % 5 === 0) {
+                speak(`${currentReps}! Keep it up!`);
+            } else {
+                const repCues = [`${currentReps}!`, `${currentReps}. Good!`, `${currentReps}. Nice form!`];
+                speak(repCues[Math.floor(Math.random() * repCues.length)]);
+            }
+            setAiCoaching(`${currentReps}/${targetReps}`);
         }
 
-        // Provide AI coaching for form issues (throttled)
-        const now = Date.now();
+        // Track phase for voice cues
+        if (result.phaseJustChanged && lastPhaseRef.current !== result.phase) {
+            lastPhaseTimeRef.current = now;
+
+            // Voice cue when reaching bottom
+            if (result.phase === 'down') {
+                const downCues = ['Good depth! Now drive up!', 'Hold... power up!', 'Nice! Push back up!'];
+                const cue = downCues[Math.floor(Math.random() * downCues.length)];
+                setAiCoaching(cue);
+                speak(cue);
+            }
+            lastPhaseRef.current = result.phase;
+        }
+
+        // Idle detection: Prompt if no phase change for 4+ seconds
+        if (now - lastPhaseTimeRef.current > 4000 && now - lastCoachingRef.current > 6000) {
+            const idleCues = [
+                'Take your time. Next rep when ready.',
+                'Rest up. Ready when you are.',
+                'Give me the next one when you\'re set.'
+            ];
+            const cue = idleCues[Math.floor(Math.random() * idleCues.length)];
+            setAiCoaching(cue);
+            speak(cue);
+            lastCoachingRef.current = now;
+            lastPhaseTimeRef.current = now; // Reset to avoid repeating
+        }
+
+        // Form feedback (throttled, only if not giving phase cues)
         if (result.formFeedback.length > 0 && now - lastCoachingRef.current > 5000) {
             const feedback = result.formFeedback[0];
-            if (feedback.message) {
+            if (feedback.message && feedback.message !== 'Position yourself so your full body is visible') {
                 setAiCoaching(feedback.message);
                 speak(feedback.message);
                 lastCoachingRef.current = now;
             }
         }
-    }, [isDetecting, voiceEnabled]);
+    }, [isDetecting, voiceEnabled, targetReps, showCelebration]);
 
     const startDetection = async () => {
         if (!selectedExercise) return;
 
         setIsDetecting(true);
+        setShowCelebration(false); // Reset celebration
         sessionStartRef.current = Date.now();
+        lastPhaseTimeRef.current = Date.now();
+        lastPhaseRef.current = 'start';
         setRepCount(0);
         setFormScore(100);
         setAiCoaching('');
@@ -720,46 +790,125 @@ export default function CoachMode() {
                         />
                     )}
 
-                    {/* Overlay UI */}
+                    {/* ============================================================ */}
+                    {/* PREMIUM GLASSMORPHISM OVERLAY */}
+                    {/* ============================================================ */}
                     <View style={styles.overlay}>
-                        {/* Top Stats */}
-                        <View style={styles.topStats}>
-                            <View style={styles.statCard}>
-                                <Text style={styles.statLabel}>REPS</Text>
-                                <Text style={styles.statValue}>{repCount}</Text>
-                            </View>
-                            <View style={styles.statCard}>
-                                <Text style={styles.statLabel}>FORM</Text>
+                        {/* Main Rep Counter - Center Top with ARM/FIRE Glow */}
+                        <View style={[
+                            styles.glassRepContainer,
+                            {
+                                borderColor: repJustCounted
+                                    ? '#22FF22' // Green flash on count
+                                    : isArmed
+                                        ? '#FFB800' // Yellow when armed (at bottom)
+                                        : 'rgba(255, 255, 255, 0.2)' // Default
+                            }
+                        ]}>
+                            <Text style={styles.glassRepLabel}>REPS</Text>
+                            <View style={styles.repProgressContainer}>
                                 <Text style={[
-                                    styles.statValue,
-                                    { color: formScore >= 90 ? '#22C55E' : formScore >= 70 ? '#F59E0B' : '#EF4444' }
-                                ]}>
-                                    {formScore}%
-                                </Text>
+                                    styles.glassRepCount,
+                                    {
+                                        color: repJustCounted
+                                            ? '#22FF22'
+                                            : isArmed
+                                                ? '#FFB800'
+                                                : '#00FFCC',
+                                        textShadowColor: repJustCounted
+                                            ? 'rgba(34, 255, 34, 0.8)'
+                                            : isArmed
+                                                ? 'rgba(255, 184, 0, 0.5)'
+                                                : 'rgba(0, 255, 204, 0.5)'
+                                    }
+                                ]}>{repCount}</Text>
+                                <Text style={styles.glassRepTarget}>/{targetReps}</Text>
+                            </View>
+                            <View style={styles.progressBar}>
+                                <View style={[
+                                    styles.progressFill,
+                                    { width: `${Math.min(100, (repCount / targetReps) * 100)}%` }
+                                ]} />
                             </View>
                         </View>
 
-                        {/* Phase Indicator */}
-                        <View style={styles.phaseIndicator}>
-                            <Text style={styles.phaseText}>
-                                {phase === 'down' ? '↓ DOWN' : phase === 'up' ? '↑ UP' : phase === 'hold' ? '⏸ HOLD' : '→ MOVE'}
+                        {/* Form Score Badge */}
+                        <View style={[
+                            styles.glassFormBadge,
+                            { borderColor: formScore >= 90 ? '#00FFCC' : formScore >= 70 ? '#FFB800' : '#FF6B6B' }
+                        ]}>
+                            <Text style={[
+                                styles.glassFormText,
+                                { color: formScore >= 90 ? '#00FFCC' : formScore >= 70 ? '#FFB800' : '#FF6B6B' }
+                            ]}>
+                                {formScore}%
+                            </Text>
+                            <Text style={styles.glassFormLabel}>FORM</Text>
+                        </View>
+
+                        {/* Phase Indicator - Dynamic */}
+                        <View style={[
+                            styles.glassPhaseIndicator,
+                            { backgroundColor: phase === 'down' ? 'rgba(0, 255, 204, 0.2)' : 'rgba(255, 255, 255, 0.1)' }
+                        ]}>
+                            <Text style={[
+                                styles.glassPhaseText,
+                                { color: phase === 'down' ? '#00FFCC' : '#FFFFFF' }
+                            ]}>
+                                {phase === 'down' ? '↓ DOWN' : phase === 'up' || phase === 'start' ? '↑ UP' : phase === 'hold' ? '⏸ HOLD' : '• READY'}
                             </Text>
                         </View>
 
                         {/* AI Coaching Message */}
                         {aiCoaching && (
-                            <View style={styles.coachingBubble}>
-                                <Text style={styles.coachingText}>{aiCoaching}</Text>
+                            <View style={styles.glassCoachingBubble}>
+                                <Text style={styles.glassCoachingText}>{aiCoaching}</Text>
                             </View>
                         )}
 
                         {/* Bottom Controls */}
                         <View style={styles.bottomControls}>
-                            <Pressable style={styles.stopButton} onPress={stopDetection}>
-                                <Text style={styles.stopButtonText}>FINISH</Text>
+                            <Pressable style={styles.glassStopButton} onPress={stopDetection}>
+                                <Text style={styles.glassStopButtonText}>FINISH</Text>
                             </Pressable>
                         </View>
                     </View>
+
+                    {/* ============================================================ */}
+                    {/* CELEBRATION OVERLAY */}
+                    {/* ============================================================ */}
+                    {showCelebration && (
+                        <View style={styles.celebrationOverlay}>
+                            <View style={styles.celebrationCard}>
+                                <Text style={styles.celebrationEmoji}>🎉</Text>
+                                <Text style={styles.celebrationTitle}>Target Reached!</Text>
+                                <Text style={styles.celebrationSubtitle}>
+                                    {repCount}/{targetReps} reps completed
+                                </Text>
+                                <Text style={styles.celebrationScore}>
+                                    Form Score: {formScore}%
+                                </Text>
+
+                                <Pressable
+                                    style={styles.celebrationContinueButton}
+                                    onPress={() => {
+                                        setShowCelebration(false);
+                                        setTargetReps(prev => prev + 5);
+                                        speak('Alright, 5 more! Let\'s go!');
+                                    }}
+                                >
+                                    <Text style={styles.celebrationContinueText}>+5 More Reps</Text>
+                                </Pressable>
+
+                                <Pressable
+                                    style={styles.celebrationFinishButton}
+                                    onPress={stopDetection}
+                                >
+                                    <Text style={styles.celebrationFinishText}>End Workout</Text>
+                                </Pressable>
+                            </View>
+                        </View>
+                    )}
                 </View>
             )}
 
@@ -1269,5 +1418,200 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '900',
         color: '#000',
+    },
+    // ============================================================
+    // GLASSMORPHISM STYLES - Premium 2026 Design
+    // ============================================================
+    glassRepContainer: {
+        position: 'absolute',
+        top: 100,
+        alignSelf: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 24,
+        paddingHorizontal: 32,
+        paddingVertical: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+        alignItems: 'center',
+        minWidth: 140,
+    },
+    glassRepLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: 'rgba(255, 255, 255, 0.6)',
+        letterSpacing: 2,
+    },
+    repProgressContainer: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        marginTop: 4,
+    },
+    glassRepCount: {
+        fontSize: 56,
+        fontWeight: '900',
+        color: '#00FFCC',
+        textShadowColor: 'rgba(0, 255, 204, 0.5)',
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 15,
+    },
+    glassRepTarget: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: 'rgba(255, 255, 255, 0.5)',
+    },
+    progressBar: {
+        width: 100,
+        height: 4,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        borderRadius: 2,
+        marginTop: 8,
+        overflow: 'hidden',
+    },
+    progressFill: {
+        height: '100%',
+        backgroundColor: '#00FFCC',
+        borderRadius: 2,
+    },
+    glassFormBadge: {
+        position: 'absolute',
+        top: 100,
+        right: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderWidth: 2,
+        alignItems: 'center',
+    },
+    glassFormText: {
+        fontSize: 28,
+        fontWeight: '900',
+    },
+    glassFormLabel: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: 'rgba(255, 255, 255, 0.5)',
+        letterSpacing: 1,
+        marginTop: 2,
+    },
+    glassPhaseIndicator: {
+        position: 'absolute',
+        top: 220,
+        alignSelf: 'center',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    glassPhaseText: {
+        fontSize: 18,
+        fontWeight: '800',
+        letterSpacing: 2,
+    },
+    glassCoachingBubble: {
+        position: 'absolute',
+        bottom: 140,
+        left: 20,
+        right: 20,
+        backgroundColor: 'rgba(0, 255, 204, 0.15)',
+        borderRadius: 16,
+        paddingHorizontal: 20,
+        paddingVertical: 14,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 255, 204, 0.3)',
+    },
+    glassCoachingText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#FFFFFF',
+        textAlign: 'center',
+    },
+    glassStopButton: {
+        backgroundColor: 'rgba(255, 107, 107, 0.2)',
+        paddingHorizontal: 48,
+        paddingVertical: 16,
+        borderRadius: 30,
+        borderWidth: 2,
+        borderColor: '#FF6B6B',
+    },
+    glassStopButtonText: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: '#FF6B6B',
+        letterSpacing: 2,
+    },
+    // ============================================================
+    // CELEBRATION OVERLAY
+    // ============================================================
+    celebrationOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 100,
+    },
+    celebrationCard: {
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 32,
+        paddingHorizontal: 40,
+        paddingVertical: 40,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+        maxWidth: 320,
+    },
+    celebrationEmoji: {
+        fontSize: 72,
+        marginBottom: 16,
+    },
+    celebrationTitle: {
+        fontSize: 28,
+        fontWeight: '900',
+        color: '#00FFCC',
+        marginBottom: 8,
+        textShadowColor: 'rgba(0, 255, 204, 0.5)',
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 15,
+    },
+    celebrationSubtitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: 'rgba(255, 255, 255, 0.8)',
+        marginBottom: 8,
+    },
+    celebrationScore: {
+        fontSize: 16,
+        color: 'rgba(255, 255, 255, 0.6)',
+        marginBottom: 24,
+    },
+    celebrationContinueButton: {
+        backgroundColor: 'rgba(0, 255, 204, 0.2)',
+        paddingHorizontal: 32,
+        paddingVertical: 16,
+        borderRadius: 24,
+        borderWidth: 2,
+        borderColor: '#00FFCC',
+        marginBottom: 12,
+        width: '100%',
+        alignItems: 'center',
+    },
+    celebrationContinueText: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#00FFCC',
+    },
+    celebrationFinishButton: {
+        backgroundColor: 'transparent',
+        paddingHorizontal: 32,
+        paddingVertical: 14,
+        borderRadius: 24,
+        width: '100%',
+        alignItems: 'center',
+    },
+    celebrationFinishText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: 'rgba(255, 255, 255, 0.6)',
     },
 });
