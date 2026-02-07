@@ -1,14 +1,24 @@
-import { PushUpAnalyzer } from '@/services/pushup/PushUpAnalyzer';
+// Enhanced AI Coach - Works with any exercise
 import { Keypoint, PushUpPose } from '@/types';
-import { CameraType, useCameraPermissions } from 'expo-camera'; // Renamed to avoid specific conflict if needed, though they are different libs
-import { useRouter } from 'expo-router';
+import { CameraType, useCameraPermissions } from 'expo-camera';
+import * as Haptics from 'expo-haptics';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Speech from 'expo-speech';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-// Native Imports (will likely be mocked/ignored on web bundle, but we validly import them for source code)
+// Pose & Exercise Analysis
+import { Exercise, EXERCISES, getExerciseById } from '@/data/exercises';
+import { geminiService } from '@/services/ai/GeminiService';
+import { createExerciseAnalyzer, ExerciseAnalyzer, PoseData } from '@/services/pose/ExerciseAnalyzer';
 import { usePushUpPoseProcessor } from '@/services/pose/PoseDetector.native';
+import { storageService, UserPreferences } from '@/services/storage/StorageService';
+
+// Native-only Skia imports
 import { Canvas, Circle, Line, vec } from '@shopify/react-native-skia';
 import { MediapipeCamera } from 'react-native-mediapipe-posedetection';
+
+type CoachState = 'selecting' | 'ready' | 'detecting' | 'summary';
 
 // Debug status component
 function DebugOverlay({
@@ -416,39 +426,180 @@ function WebCameraView({
 
 export default function CoachMode() {
     const router = useRouter();
+    const { exerciseId: paramExerciseId } = useLocalSearchParams<{ exerciseId?: string }>();
     const [permission, requestPermission] = useCameraPermissions();
     const [facing, setFacing] = useState<CameraType>('front');
+
+    // State management
+    const [coachState, setCoachState] = useState<CoachState>('selecting');
+    const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
+    const [preferences, setPreferences] = useState<UserPreferences | null>(null);
     const [isDetecting, setIsDetecting] = useState(false);
     const [repCount, setRepCount] = useState(0);
     const [formScore, setFormScore] = useState(100);
-    const [phase, setPhase] = useState<'up' | 'down' | 'transition'>('up');
+    const [phase, setPhase] = useState<'up' | 'down' | 'transition' | 'hold' | 'start'>('start');
 
-    const analyzerRef = useRef<PushUpAnalyzer | null>(null);
+    // AI coaching
+    const [aiTip, setAiTip] = useState<string>('');
+    const [aiCoaching, setAiCoaching] = useState<string>('');
+    const [voiceEnabled, setVoiceEnabled] = useState(true);
 
+    // Session summary
+    const [sessionSummary, setSessionSummary] = useState<{
+        totalReps: number;
+        averageFormScore: number;
+        durationSeconds: number;
+        aiSummary?: string;
+        aiEncouragement?: string;
+        nextStep?: string;
+    } | null>(null);
+
+    const analyzerRef = useRef<ExerciseAnalyzer | null>(null);
+    const sessionStartRef = useRef<number>(0);
+    const lastCoachingRef = useRef<number>(0);
+
+    // Load preferences and exercise
     useEffect(() => {
-        analyzerRef.current = new PushUpAnalyzer();
-    }, []);
+        loadData();
+    }, [paramExerciseId]);
 
-    const handlePoseDetected = useCallback((pose: PushUpPose) => {
-        if (!analyzerRef.current) return;
+    const loadData = async () => {
+        const prefs = await storageService.getUserPreferences();
+        setPreferences(prefs);
 
-        const analysis = analyzerRef.current.analyzePose(pose);
-
-        setFormScore(analysis.score);
-        setPhase(analysis.phase);
-        setRepCount(analyzerRef.current.getRepCount());
-    }, []);
-
-    const startDetection = () => {
-        setIsDetecting(true);
-        if (analyzerRef.current) {
-            analyzerRef.current.reset();
-            setRepCount(0);
+        if (paramExerciseId) {
+            const exercise = getExerciseById(paramExerciseId);
+            if (exercise) {
+                await selectExercise(exercise);
+            }
         }
     };
 
-    const stopDetection = () => {
+    const selectExercise = async (exercise: Exercise) => {
+        setSelectedExercise(exercise);
+        analyzerRef.current = createExerciseAnalyzer(exercise.id);
+        setCoachState('ready');
+
+        // Get AI tip
+        const tip = await geminiService.getExerciseTip(exercise.id, preferences);
+        setAiTip(tip);
+    };
+
+    const speak = (text: string) => {
+        if (voiceEnabled && text) {
+            Speech.speak(text, { language: 'en', rate: 0.9 });
+        }
+    };
+
+    const handlePoseDetected = useCallback((pose: PushUpPose) => {
+        if (!analyzerRef.current || !isDetecting) return;
+
+        // Convert PushUpPose to PoseData format
+        const poseData: PoseData = {
+            landmarks: {
+                nose: pose.nose,
+                left_shoulder: pose.leftShoulder,
+                right_shoulder: pose.rightShoulder,
+                left_elbow: pose.leftElbow,
+                right_elbow: pose.rightElbow,
+                left_wrist: pose.leftWrist,
+                right_wrist: pose.rightWrist,
+                left_hip: pose.leftHip,
+                right_hip: pose.rightHip,
+                left_knee: pose.leftKnee,
+                right_knee: pose.rightKnee,
+                left_ankle: pose.leftAnkle,
+                right_ankle: pose.rightAnkle,
+            },
+            timestamp: Date.now(),
+        };
+
+        const result = analyzerRef.current.analyze(poseData);
+
+        setFormScore(result.formScore);
+        setPhase(result.phase as any);
+
+        if (result.repCompleted) {
+            setRepCount(prev => prev + 1);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+            // Announce rep if divisible by 5
+            if (analyzerRef.current.getSessionStats().repCount % 5 === 0) {
+                speak(`${analyzerRef.current.getSessionStats().repCount} reps`);
+            }
+        }
+
+        // Provide AI coaching for form issues (throttled)
+        const now = Date.now();
+        if (result.formFeedback.length > 0 && now - lastCoachingRef.current > 5000) {
+            const feedback = result.formFeedback[0];
+            if (feedback.message) {
+                setAiCoaching(feedback.message);
+                speak(feedback.message);
+                lastCoachingRef.current = now;
+            }
+        }
+    }, [isDetecting, voiceEnabled]);
+
+    const startDetection = async () => {
+        if (!selectedExercise) return;
+
+        setIsDetecting(true);
+        sessionStartRef.current = Date.now();
+        setRepCount(0);
+        setFormScore(100);
+        setAiCoaching('');
+
+        if (analyzerRef.current) {
+            analyzerRef.current.resetForNewSet();
+        }
+
+        speak('Starting. Get ready!');
+        setCoachState('detecting');
+    };
+
+    const stopDetection = async () => {
         setIsDetecting(false);
+
+        if (analyzerRef.current && selectedExercise) {
+            const stats = analyzerRef.current.getSessionSummary();
+            const duration = Math.floor((Date.now() - sessionStartRef.current) / 1000);
+
+            // Save session
+            await storageService.saveWorkoutSession({
+                id: Date.now().toString(),
+                date: new Date().toISOString(),
+                exerciseId: selectedExercise.id,
+                exerciseName: selectedExercise.name,
+                bodyParts: selectedExercise.bodyParts,
+                mode: 'ai-coach',
+                repsCompleted: stats.totalReps,
+                setsCompleted: 1,
+                formScore: stats.averageFormScore,
+                durationSeconds: duration,
+            });
+
+            // Get AI summary
+            const aiSummary = await geminiService.generateSessionSummary(
+                selectedExercise.id,
+                1,
+                stats.totalReps,
+                duration,
+                preferences
+            );
+
+            setSessionSummary({
+                totalReps: stats.totalReps,
+                averageFormScore: stats.averageFormScore,
+                durationSeconds: duration,
+                aiSummary: aiSummary.summary,
+                aiEncouragement: aiSummary.encouragement,
+                nextStep: aiSummary.nextStep,
+            });
+
+            speak('Great workout!');
+            setCoachState('summary');
+        }
     };
 
     // On web, we handle our own camera permissions
@@ -492,78 +643,195 @@ export default function CoachMode() {
                 <Pressable onPress={() => router.back()} style={styles.backButton}>
                     <Text style={styles.backText}>←</Text>
                 </Pressable>
-                <Text style={styles.headerTitle}>AI Coach</Text>
-                <Pressable
-                    onPress={() => setFacing(f => f === 'back' ? 'front' : 'back')}
-                    style={styles.flipButton}
-                >
-                    <Text style={styles.flipText}>↻</Text>
+                <Text style={styles.headerTitle}>
+                    {selectedExercise ? selectedExercise.name : 'AI Coach'}
+                </Text>
+                <Pressable onPress={() => setVoiceEnabled(!voiceEnabled)} style={styles.flipButton}>
+                    <Text style={styles.flipText}>{voiceEnabled ? '🔊' : '🔇'}</Text>
                 </Pressable>
             </View>
 
-            {/* Camera View */}
-            <View style={styles.cameraContainer}>
-                {Platform.OS === 'web' ? (
-                    <WebCameraView
-                        isDetecting={isDetecting}
-                        onPoseDetected={handlePoseDetected}
-                    />
-                ) : (
-                    <NativeCameraView
-                        isDetecting={isDetecting}
-                        onPoseDetected={handlePoseDetected}
-                    />
-                )}
+            {/* Exercise Selection State */}
+            {coachState === 'selecting' && (
+                <ScrollView style={styles.selectContainer} contentContainerStyle={styles.selectContent}>
+                    <Text style={styles.selectTitle}>Choose Exercise</Text>
+                    <Text style={styles.selectSubtitle}>
+                        AI Coach will analyze your form in real-time
+                    </Text>
+                    {EXERCISES.filter(e => e.type === 'reps').map(exercise => (
+                        <Pressable
+                            key={exercise.id}
+                            style={({ pressed }) => [
+                                styles.exerciseCard,
+                                pressed && styles.cardPressed,
+                            ]}
+                            onPress={() => selectExercise(exercise)}
+                        >
+                            <View style={styles.exerciseInfo}>
+                                <Text style={styles.exerciseName}>{exercise.name}</Text>
+                                <Text style={styles.exerciseDifficulty}>{exercise.difficulty}</Text>
+                            </View>
+                            <Text style={styles.exerciseArrow}>→</Text>
+                        </Pressable>
+                    ))}
+                </ScrollView>
+            )}
 
-                {/* Overlay UI */}
-                <View style={styles.overlay}>
-                    {/* Top Stats */}
-                    <View style={styles.topStats}>
-                        <View style={styles.statCard}>
-                            <Text style={styles.statLabel}>REPS</Text>
-                            <Text style={styles.statValue}>{repCount}</Text>
+            {/* Ready State - Show AI tip */}
+            {coachState === 'ready' && selectedExercise && (
+                <View style={styles.readyContainer}>
+                    <Text style={styles.readyTitle}>{selectedExercise.name}</Text>
+                    <Text style={styles.readySubtitle}>
+                        Position your phone to see your full body
+                    </Text>
+
+                    {aiTip && (
+                        <View style={styles.tipCard}>
+                            <Text style={styles.tipLabel}>💡 AI Tip</Text>
+                            <Text style={styles.tipText}>{aiTip}</Text>
                         </View>
-                        <View style={styles.statCard}>
-                            <Text style={styles.statLabel}>FORM</Text>
-                            <Text style={[
-                                styles.statValue,
-                                { color: formScore >= 90 ? '#00ff88' : formScore >= 70 ? '#ffaa00' : '#ff4444' }
-                            ]}>
-                                {formScore}%
+                    )}
+
+                    <Pressable style={styles.startButton} onPress={startDetection}>
+                        <Text style={styles.startButtonText}>START AI COACHING</Text>
+                    </Pressable>
+
+                    <Pressable
+                        style={styles.changeExercise}
+                        onPress={() => setCoachState('selecting')}
+                    >
+                        <Text style={styles.changeExerciseText}>Choose Different Exercise</Text>
+                    </Pressable>
+                </View>
+            )}
+
+            {/* Detecting State - Camera View */}
+            {coachState === 'detecting' && (
+                <View style={styles.cameraContainer}>
+                    {Platform.OS === 'web' ? (
+                        <WebCameraView
+                            isDetecting={isDetecting}
+                            onPoseDetected={handlePoseDetected}
+                        />
+                    ) : (
+                        <NativeCameraView
+                            isDetecting={isDetecting}
+                            onPoseDetected={handlePoseDetected}
+                        />
+                    )}
+
+                    {/* Overlay UI */}
+                    <View style={styles.overlay}>
+                        {/* Top Stats */}
+                        <View style={styles.topStats}>
+                            <View style={styles.statCard}>
+                                <Text style={styles.statLabel}>REPS</Text>
+                                <Text style={styles.statValue}>{repCount}</Text>
+                            </View>
+                            <View style={styles.statCard}>
+                                <Text style={styles.statLabel}>FORM</Text>
+                                <Text style={[
+                                    styles.statValue,
+                                    { color: formScore >= 90 ? '#22C55E' : formScore >= 70 ? '#F59E0B' : '#EF4444' }
+                                ]}>
+                                    {formScore}%
+                                </Text>
+                            </View>
+                        </View>
+
+                        {/* Phase Indicator */}
+                        <View style={styles.phaseIndicator}>
+                            <Text style={styles.phaseText}>
+                                {phase === 'down' ? '↓ DOWN' : phase === 'up' ? '↑ UP' : phase === 'hold' ? '⏸ HOLD' : '→ MOVE'}
                             </Text>
                         </View>
-                    </View>
 
-                    {/* Phase Indicator */}
-                    <View style={styles.phaseIndicator}>
-                        <Text style={styles.phaseText}>
-                            {phase === 'down' ? '↓ DOWN' : phase === 'up' ? '↑ UP' : '→ TRANSITION'}
-                        </Text>
-                    </View>
-
-                    {/* Bottom Controls */}
-                    <View style={styles.bottomControls}>
-                        {!isDetecting ? (
-                            <Pressable style={styles.startButton} onPress={startDetection}>
-                                <Text style={styles.startButtonText}>START TRACKING</Text>
-                            </Pressable>
-                        ) : (
-                            <Pressable style={styles.stopButton} onPress={stopDetection}>
-                                <Text style={styles.stopButtonText}>STOP</Text>
-                            </Pressable>
+                        {/* AI Coaching Message */}
+                        {aiCoaching && (
+                            <View style={styles.coachingBubble}>
+                                <Text style={styles.coachingText}>{aiCoaching}</Text>
+                            </View>
                         )}
+
+                        {/* Bottom Controls */}
+                        <View style={styles.bottomControls}>
+                            <Pressable style={styles.stopButton} onPress={stopDetection}>
+                                <Text style={styles.stopButtonText}>FINISH</Text>
+                            </Pressable>
+                        </View>
                     </View>
                 </View>
-            </View>
+            )}
+
+            {/* Summary State */}
+            {coachState === 'summary' && sessionSummary && (
+                <ScrollView style={styles.summaryContainer} contentContainerStyle={styles.summaryContent}>
+                    <Text style={styles.summaryEmoji}>🎉</Text>
+                    <Text style={styles.summaryTitle}>Workout Complete!</Text>
+
+                    <View style={styles.summaryStats}>
+                        <View style={styles.summaryStat}>
+                            <Text style={styles.summaryStatValue}>{sessionSummary.totalReps}</Text>
+                            <Text style={styles.summaryStatLabel}>Reps</Text>
+                        </View>
+                        <View style={styles.summaryStat}>
+                            <Text style={[
+                                styles.summaryStatValue,
+                                { color: sessionSummary.averageFormScore >= 80 ? '#22C55E' : '#F59E0B' }
+                            ]}>
+                                {sessionSummary.averageFormScore}%
+                            </Text>
+                            <Text style={styles.summaryStatLabel}>Form Score</Text>
+                        </View>
+                        <View style={styles.summaryStat}>
+                            <Text style={styles.summaryStatValue}>
+                                {Math.floor(sessionSummary.durationSeconds / 60)}:{String(sessionSummary.durationSeconds % 60).padStart(2, '0')}
+                            </Text>
+                            <Text style={styles.summaryStatLabel}>Duration</Text>
+                        </View>
+                    </View>
+
+                    {sessionSummary.aiSummary && (
+                        <View style={styles.aiSummaryCard}>
+                            <Text style={styles.aiSummaryTitle}>🤖 AI Analysis</Text>
+                            <Text style={styles.aiSummaryText}>{sessionSummary.aiSummary}</Text>
+                            {sessionSummary.aiEncouragement && (
+                                <Text style={styles.aiEncouragement}>{sessionSummary.aiEncouragement}</Text>
+                            )}
+                        </View>
+                    )}
+
+                    {sessionSummary.nextStep && (
+                        <View style={styles.nextStepCard}>
+                            <Text style={styles.nextStepLabel}>📌 Next Step</Text>
+                            <Text style={styles.nextStepText}>{sessionSummary.nextStep}</Text>
+                        </View>
+                    )}
+
+                    <Pressable
+                        style={styles.anotherSetButton}
+                        onPress={() => {
+                            setSessionSummary(null);
+                            setCoachState('ready');
+                        }}
+                    >
+                        <Text style={styles.anotherSetText}>Do Another Set</Text>
+                    </Pressable>
+
+                    <Pressable style={styles.doneButton} onPress={() => router.back()}>
+                        <Text style={styles.doneButtonText}>Done</Text>
+                    </Pressable>
+                </ScrollView>
+            )}
 
             {/* Instructions Banner */}
-            <View style={styles.infoBanner}>
-                <Text style={styles.infoText}>
-                    {isDetecting
-                        ? '🟢 Stand back so camera sees your full body'
-                        : '💡 TIP: Stand 5-8 feet from camera, full body visible'}
-                </Text>
-            </View>
+            {coachState === 'detecting' && (
+                <View style={styles.infoBanner}>
+                    <Text style={styles.infoText}>
+                        🟢 Stand back so camera sees your full body
+                    </Text>
+                </View>
+            )}
         </View>
     );
 }
@@ -776,5 +1044,230 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#aaa',
         fontWeight: '600',
+    },
+
+    // Exercise Selection
+    selectContainer: {
+        flex: 1,
+    },
+    selectContent: {
+        padding: 20,
+        paddingTop: 100,
+    },
+    selectTitle: {
+        fontSize: 28,
+        fontWeight: '900',
+        color: '#fff',
+        marginBottom: 8,
+    },
+    selectSubtitle: {
+        fontSize: 16,
+        color: '#888',
+        marginBottom: 24,
+    },
+    exerciseCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    cardPressed: {
+        opacity: 0.7,
+    },
+    exerciseInfo: {
+        flex: 1,
+    },
+    exerciseName: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#fff',
+        marginBottom: 4,
+    },
+    exerciseDifficulty: {
+        fontSize: 13,
+        color: 'rgba(255,255,255,0.5)',
+        textTransform: 'capitalize',
+    },
+    exerciseArrow: {
+        fontSize: 18,
+        color: 'rgba(255,255,255,0.3)',
+    },
+
+    // Ready State
+    readyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+    },
+    readyTitle: {
+        fontSize: 32,
+        fontWeight: '900',
+        color: '#fff',
+        marginBottom: 12,
+    },
+    readySubtitle: {
+        fontSize: 16,
+        color: '#888',
+        textAlign: 'center',
+        marginBottom: 32,
+    },
+    tipCard: {
+        backgroundColor: 'rgba(139, 92, 246, 0.15)',
+        borderRadius: 16,
+        padding: 16,
+        width: '100%',
+        marginBottom: 32,
+        borderLeftWidth: 3,
+        borderLeftColor: '#8B5CF6',
+    },
+    tipLabel: {
+        fontSize: 12,
+        color: '#8B5CF6',
+        fontWeight: '700',
+        marginBottom: 6,
+    },
+    tipText: {
+        fontSize: 15,
+        color: 'rgba(255,255,255,0.8)',
+        lineHeight: 22,
+    },
+    changeExercise: {
+        marginTop: 20,
+        padding: 12,
+    },
+    changeExerciseText: {
+        fontSize: 14,
+        color: '#8B5CF6',
+        fontWeight: '600',
+    },
+
+    // Coaching Bubble
+    coachingBubble: {
+        position: 'absolute',
+        bottom: 120,
+        left: 20,
+        right: 20,
+        backgroundColor: 'rgba(239, 68, 68, 0.9)',
+        borderRadius: 12,
+        padding: 16,
+    },
+    coachingText: {
+        fontSize: 16,
+        color: '#fff',
+        textAlign: 'center',
+        fontWeight: '700',
+    },
+
+    // Summary Screen
+    summaryContainer: {
+        flex: 1,
+    },
+    summaryContent: {
+        padding: 24,
+        paddingTop: 100,
+        alignItems: 'center',
+    },
+    summaryEmoji: {
+        fontSize: 64,
+        marginBottom: 16,
+    },
+    summaryTitle: {
+        fontSize: 28,
+        fontWeight: '900',
+        color: '#fff',
+        marginBottom: 24,
+    },
+    summaryStats: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        width: '100%',
+        marginBottom: 32,
+    },
+    summaryStat: {
+        alignItems: 'center',
+    },
+    summaryStatValue: {
+        fontSize: 28,
+        fontWeight: '900',
+        color: '#fff',
+    },
+    summaryStatLabel: {
+        fontSize: 12,
+        color: '#888',
+        fontWeight: '600',
+        marginTop: 4,
+    },
+    aiSummaryCard: {
+        backgroundColor: 'rgba(139, 92, 246, 0.15)',
+        borderRadius: 16,
+        padding: 20,
+        width: '100%',
+        marginBottom: 16,
+    },
+    aiSummaryTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#8B5CF6',
+        marginBottom: 8,
+    },
+    aiSummaryText: {
+        fontSize: 16,
+        color: 'rgba(255,255,255,0.9)',
+        lineHeight: 24,
+        marginBottom: 12,
+    },
+    aiEncouragement: {
+        fontSize: 15,
+        color: '#22C55E',
+        fontWeight: '600',
+        fontStyle: 'italic',
+    },
+    nextStepCard: {
+        backgroundColor: 'rgba(34, 197, 94, 0.15)',
+        borderRadius: 16,
+        padding: 16,
+        width: '100%',
+        marginBottom: 24,
+    },
+    nextStepLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#22C55E',
+        marginBottom: 6,
+    },
+    nextStepText: {
+        fontSize: 15,
+        color: 'rgba(255,255,255,0.9)',
+        lineHeight: 22,
+    },
+    anotherSetButton: {
+        backgroundColor: 'rgba(139, 92, 246, 0.2)',
+        paddingHorizontal: 32,
+        paddingVertical: 14,
+        borderRadius: 12,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#8B5CF6',
+    },
+    anotherSetText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#8B5CF6',
+    },
+    doneButton: {
+        backgroundColor: '#22C55E',
+        paddingHorizontal: 48,
+        paddingVertical: 16,
+        borderRadius: 12,
+    },
+    doneButtonText: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: '#000',
     },
 });
