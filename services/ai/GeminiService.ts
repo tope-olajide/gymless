@@ -257,6 +257,53 @@ export function isGeminiAvailable(): boolean {
     return !!GEMINI_KEY;
 }
 
+/**
+ * Get accountability nudge for progress screen
+ */
+export async function getAccountabilityNudge(
+    streakData: { currentStreak: number; longestStreak: number; totalWorkouts: number } | null,
+    recentWorkouts: { exerciseName: string; date: string }[],
+    preferences?: UserPreferences | null
+): Promise<string> {
+    const streak = streakData?.currentStreak || 0;
+    const total = streakData?.totalWorkouts || 0;
+    const goal = preferences?.primaryGoals?.[0] || 'general fitness';
+    const lastWorkout = recentWorkouts[0];
+    const daysSinceWorkout = lastWorkout
+        ? Math.floor((Date.now() - new Date(lastWorkout.date).getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
+
+    const prompt = `You are a supportive AI fitness coach. User stats:
+- Current streak: ${streak} days
+- Total workouts: ${total}
+- Days since last workout: ${daysSinceWorkout}
+- Primary goal: ${goal}
+- Last exercise: ${lastWorkout?.exerciseName || 'none yet'}
+
+Write ONE personalized motivational message (max 25 words). Be encouraging, specific to their situation. 
+If they haven't worked out recently, gently encourage return.
+If they're on a streak, celebrate it!
+If they're new, welcome them warmly.
+No emojis at the start.`;
+
+    const nudge = await generateContent(prompt);
+
+    if (nudge) return nudge;
+
+    // Fallbacks based on situation
+    if (streak === 0 && total === 0) {
+        return "Welcome! Every journey starts with a single step. Ready to begin yours?";
+    } else if (daysSinceWorkout > 3) {
+        return `It's been ${daysSinceWorkout} days. Your body is ready—even a quick session counts!`;
+    } else if (streak >= 7) {
+        return `${streak}-day streak! You're building a powerful habit. Keep this momentum going!`;
+    } else if (streak >= 3) {
+        return `${streak} days strong! Consistency is your superpower. One more day?`;
+    } else {
+        return "You showed up before, and you can do it again. Let's make today count!";
+    }
+}
+
 export const geminiService = {
     getExerciseTip,
     getFormFeedback,
@@ -264,4 +311,5 @@ export const geminiService = {
     generateSessionSummary,
     getModificationSuggestion,
     isGeminiAvailable,
+    getAccountabilityNudge,
 };

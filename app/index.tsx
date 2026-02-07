@@ -263,6 +263,31 @@ export default function HomeScreen() {
                 </Pressable>
             </Animated.View>
 
+            {/* View Progress Button */}
+            <Animated.View entering={FadeInDown.delay(650).springify()}>
+                <Pressable
+                    style={({ pressed }) => [
+                        styles.exploreButton,
+                        pressed && styles.cardPressed
+                    ]}
+                    onPress={() => router.push('/progress')}
+                >
+                    <LinearGradient
+                        colors={['#581C87', '#4C1D95']}
+                        style={styles.exploreGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                    >
+                        <Text style={styles.exploreIcon}>📊</Text>
+                        <View style={styles.exploreTextContainer}>
+                            <Text style={styles.exploreTitle}>View Progress</Text>
+                            <Text style={styles.exploreSubtitle}>Goals, calendar & achievements</Text>
+                        </View>
+                        <Text style={styles.exploreArrow}>→</Text>
+                    </LinearGradient>
+                </Pressable>
+            </Animated.View>
+
             {/* Recommended Workout */}
             {recommended && (
                 <Animated.View entering={FadeInDown.delay(700).springify()}>
