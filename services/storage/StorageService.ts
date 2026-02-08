@@ -19,6 +19,8 @@ const KEYS = {
     STREAK_DATA: '@gymless/streak_data',
     LAST_WORKOUT_DATE: '@gymless/last_workout_date',
     AI_MODEL_PREFERENCE: '@gymless/ai_model_preference',
+    CHALLENGE_PROGRESS: '@gymless/challenge_progress',
+    THEME_PREFERENCE: '@gymless/theme_preference',
 };
 
 // Types
@@ -66,6 +68,18 @@ export interface GoalProgress {
     startDate: string;
     endDate?: string;
 }
+
+export interface ChallengeProgress {
+    challengeId: string;         // e.g., 'build-30-feb-2026'
+    startDate: string;
+    currentDay: number;          // 1-30
+    completedDays: number[];     // Array of completed day numbers
+    unlockedMilestones: number[]; // Days with unlocked milestones (7, 14, 21, 30)
+    isActive: boolean;
+    completedAt?: string;        // When challenge was finished
+}
+
+export type ThemePreference = 'dark' | 'light' | 'system';
 
 // Storage Service Class
 class StorageService {
@@ -324,6 +338,81 @@ class StorageService {
 
     async setAIModelPreference(model: string): Promise<void> {
         await AsyncStorage.setItem(KEYS.AI_MODEL_PREFERENCE, model);
+    }
+
+    // ==========================================
+    // 30-DAY CHALLENGE
+    // ==========================================
+
+    async getChallengeProgress(): Promise<ChallengeProgress | null> {
+        try {
+            const json = await AsyncStorage.getItem(KEYS.CHALLENGE_PROGRESS);
+            return json ? JSON.parse(json) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    async startChallenge(challengeId?: string): Promise<ChallengeProgress> {
+        const id = challengeId || `build-30-${new Date().toISOString().slice(0, 10)}`;
+        const progress: ChallengeProgress = {
+            challengeId: id,
+            startDate: new Date().toISOString(),
+            currentDay: 1,
+            completedDays: [],
+            unlockedMilestones: [],
+            isActive: true,
+        };
+        await AsyncStorage.setItem(KEYS.CHALLENGE_PROGRESS, JSON.stringify(progress));
+        return progress;
+    }
+
+    async markChallengeDayComplete(day: number): Promise<ChallengeProgress | null> {
+        const progress = await this.getChallengeProgress();
+        if (!progress || !progress.isActive) return null;
+
+        if (!progress.completedDays.includes(day)) {
+            progress.completedDays.push(day);
+        }
+        progress.currentDay = Math.min(30, day + 1);
+
+        // Check milestone unlocks
+        const milestones = [7, 14, 21, 30];
+        for (const m of milestones) {
+            if (day >= m && !progress.unlockedMilestones.includes(m)) {
+                progress.unlockedMilestones.push(m);
+            }
+        }
+
+        // Check if challenge completed
+        if (day === 30) {
+            progress.isActive = false;
+            progress.completedAt = new Date().toISOString();
+        }
+
+        await AsyncStorage.setItem(KEYS.CHALLENGE_PROGRESS, JSON.stringify(progress));
+        return progress;
+    }
+
+    async resetChallenge(): Promise<void> {
+        await AsyncStorage.removeItem(KEYS.CHALLENGE_PROGRESS);
+    }
+
+    // ==========================================
+    // THEME PREFERENCE
+    // ==========================================
+
+    async getThemePreference(): Promise<ThemePreference> {
+        try {
+            const value = await AsyncStorage.getItem(KEYS.THEME_PREFERENCE);
+            return (value as ThemePreference) || 'system';
+        } catch {
+            return 'system';
+        }
+    }
+
+    async setThemePreference(theme: ThemePreference): Promise<void> {
+        await AsyncStorage.setItem(KEYS.THEME_PREFERENCE, theme);
     }
 
     // ==========================================

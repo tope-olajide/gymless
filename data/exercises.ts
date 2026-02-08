@@ -75,6 +75,9 @@ export interface Exercise {
     // Progression
     easierVariant?: string; // Exercise ID
     harderVariant?: string; // Exercise ID
+
+    // Asset
+    imageUri?: string;
 }
 
 // =============================================
@@ -84,6 +87,7 @@ export interface Exercise {
 const SQUATS: Exercise = {
     id: 'squats',
     name: 'Squats',
+    imageUri: 'https://images.unsplash.com/photo-1574680096145-d05b474e6152?auto=format&fit=crop&q=80&w=800',
     bodyParts: ['legs', 'thighs', 'glutes'],
     description: 'Fundamental lower body exercise for strength and endurance',
     instructions: [
@@ -118,7 +122,7 @@ const SQUATS: Exercise = {
                     minAngle: 160,
                     maxAngle: 180,
                     phase: 'start',
-                    feedbackIfWrong: 'Stand up straight',
+                    feedbackIfWrong: 'Extend fully at the top',
                 },
             ],
         },
@@ -147,6 +151,7 @@ const SQUATS: Exercise = {
 const WALL_SIT: Exercise = {
     id: 'wall-sit',
     name: 'Wall Sit',
+    imageUri: 'https://images.unsplash.com/photo-1590234141364-7042da67bc9b?auto=format&fit=crop&q=80&w=800',
     bodyParts: ['legs', 'thighs'],
     description: 'Isometric hold for leg endurance',
     instructions: [
@@ -250,6 +255,7 @@ const GLUTE_BRIDGES: Exercise = {
 const LUNGES: Exercise = {
     id: 'lunges',
     name: 'Static Lunges',
+    imageUri: 'https://images.unsplash.com/photo-1594381898411-846e7d193883?auto=format&fit=crop&q=80&w=800',
     bodyParts: ['legs', 'thighs', 'glutes'],
     description: 'Unilateral leg exercise for strength and balance',
     instructions: [
@@ -496,6 +502,7 @@ const LEG_RAISES: Exercise = {
 const SIDE_PLANK: Exercise = {
     id: 'side-plank',
     name: 'Side Plank',
+    imageUri: 'https://images.unsplash.com/photo-1541534741688-6078c65b5a33?auto=format&fit=crop&q=80&w=800',
     bodyParts: ['obliques', 'abs'],
     description: 'Isometric hold for side core stability',
     instructions: [
@@ -671,6 +678,7 @@ const BIRD_DOGS: Exercise = {
 const PUSH_UPS: Exercise = {
     id: 'push-ups',
     name: 'Push-Ups',
+    imageUri: 'https://images.unsplash.com/photo-1598971639058-aba7c0bfaf9b?auto=format&fit=crop&q=80&w=800',
     bodyParts: ['chest', 'triceps', 'shoulders'],
     description: 'Classic upper body pushing exercise',
     instructions: [

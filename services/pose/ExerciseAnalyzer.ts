@@ -59,6 +59,10 @@ export interface AnalysisSession {
     // Hysteresis - prevents signal jitter
     lastRepTime: number; // Cooldown after rep
     lowestAngle: number; // Track lowest angle reached in current cycle
+    // Velocity & Robustness
+    lastY: number; // Previous Y-position of a key joint (e.g., hip)
+    velocity: number; // Current vertical velocity
+    lastPhaseChangeTime: number; // Timestamp of last confirmed phase change
 }
 
 /**
@@ -127,6 +131,9 @@ export class ExerciseAnalyzer {
             // Hysteresis init
             lastRepTime: 0,
             lowestAngle: 180,
+            lastY: 0,
+            velocity: 0,
+            lastPhaseChangeTime: Date.now(),
         };
     }
 
@@ -156,6 +163,13 @@ export class ExerciseAnalyzer {
             currentPhase: this.session.currentPhase,
             elapsedSeconds: Math.round((Date.now() - this.session.startTime) / 1000),
         };
+    }
+
+    /**
+     * Get current vertical velocity
+     */
+    getVelocity(): number {
+        return this.session.velocity;
     }
 
     /**
@@ -271,6 +285,18 @@ export class ExerciseAnalyzer {
         formScore = Math.max(0, formScore);
 
         // ============================================================
+        // VELOCITY & ROBUSTNESS
+        // Track hip movement to detect "Setup Fakes" (e.g., bending for phone)
+        // ============================================================
+        const currentY = (pose.landmarks.leftHip?.y || 0 + (pose.landmarks.rightHip?.y || 0)) / 2;
+        const deltaTime = (pose.timestamp - (this.session.startTime + (Date.now() - this.session.startTime) - pose.timestamp)) || 16; // Approx 60fps fallback
+
+        if (this.session.lastY > 0) {
+            this.session.velocity = Math.abs(currentY - this.session.lastY) / (deltaTime / 1000);
+        }
+        this.session.lastY = currentY;
+
+        // ============================================================
         // PHASE DEBOUNCING: Prevent flickering between phases
         // Phase must be stable for DEBOUNCE_FRAMES before we confirm it
         // ============================================================
@@ -295,7 +321,16 @@ export class ExerciseAnalyzer {
             phase !== this.session.confirmedPhase) {
             this.session.confirmedPhase = phase;
             this.session.phaseJustChanged = true;
+            this.session.lastPhaseChangeTime = Date.now();
         }
+
+        // ============================================================
+        // FEEDBACK THROTTLING
+        // Don't give form corrections until user is in a phase for > 1s
+        // This prevents "Stand up straight" cues during movement transitions
+        // ============================================================
+        const timeInPhase = Date.now() - this.session.lastPhaseChangeTime;
+        const throttledFeedback = timeInPhase > 1000 ? formFeedback : [];
 
         // ============================================================
         // REP COUNTING WITH HYSTERESIS
@@ -379,7 +414,7 @@ export class ExerciseAnalyzer {
         return {
             phase: this.session.confirmedPhase, // Return debounced phase
             confidence,
-            formFeedback,
+            formFeedback: throttledFeedback,
             formScore,
             repCompleted,
             holdSeconds,
@@ -412,6 +447,9 @@ export class ExerciseAnalyzer {
         // Reset hysteresis
         this.session.lastRepTime = 0;
         this.session.lowestAngle = 180;
+        this.session.lastY = 0;
+        this.session.velocity = 0;
+        this.session.lastPhaseChangeTime = Date.now();
     }
 
     /**

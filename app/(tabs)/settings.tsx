@@ -1,13 +1,13 @@
 /**
  * Settings Screen
  * 
- * Allows users to configure their AI coach model preference.
+ * Allows users to configure theme and AI coach model preference.
  */
 
 import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { AI_MODELS, AIModelId } from '@/services/ai/GeminiService';
-import { storageService } from '@/services/storage/StorageService';
+import { storageService, ThemePreference } from '@/services/storage/StorageService';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -19,25 +19,32 @@ import {
     View,
 } from 'react-native';
 
+const THEME_OPTIONS: { id: ThemePreference; name: string; icon: keyof typeof Ionicons.glyphMap; description: string }[] = [
+    { id: 'dark', name: 'Dark Mode', icon: 'moon-outline', description: 'Obsidian glass aesthetic' },
+    { id: 'light', name: 'Light Mode', icon: 'sunny-outline', description: 'Arctic frosted blue' },
+    { id: 'system', name: 'System', icon: 'settings-outline', description: 'Follow device settings' },
+];
+
 export default function SettingsScreen() {
-    const colorScheme = useColorScheme();
-    const colors = Colors[colorScheme ?? 'dark'];
-    const cardBg = colorScheme === 'dark' ? '#1e2022' : '#f5f5f5';
+    // Use theme context for theme preference
+    const { theme, preference: selectedTheme, setPreference: handleThemeSelect } = useTheme();
+    const colors = Colors[theme];
+    const cardBg = theme === 'dark' ? '#1e2022' : '#f5f5f5';
 
     const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash');
     const [loading, setLoading] = useState(true);
 
-    // Load saved preference
+    // Load saved AI model preference
     useEffect(() => {
-        const loadPreference = async () => {
+        const loadPreferences = async () => {
             const model = await storageService.getAIModelPreference();
             setSelectedModel(model);
             setLoading(false);
         };
-        loadPreference();
+        loadPreferences();
     }, []);
 
-    // Save preference when changed
+    // Save model preference
     const handleModelSelect = useCallback(async (modelId: string) => {
         const model = AI_MODELS[modelId as AIModelId];
         if (!model?.available) return;
@@ -57,7 +64,57 @@ export default function SettingsScreen() {
                     <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
                 </View>
 
-                {/* AI Model Section */}
+                {/* ============================================================ */}
+                {/* THEME SECTION */}
+                {/* ============================================================ */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                        Appearance
+                    </Text>
+                    <Text style={[styles.sectionSubtitle, { color: colors.tabIconDefault }]}>
+                        Choose your visual theme
+                    </Text>
+
+                    {THEME_OPTIONS.map((option) => (
+                        <Pressable
+                            key={option.id}
+                            style={[
+                                styles.modelCard,
+                                {
+                                    backgroundColor: cardBg,
+                                    borderColor: selectedTheme === option.id ? '#00FFCC' : 'transparent',
+                                    borderWidth: selectedTheme === option.id ? 2 : 0,
+                                },
+                            ]}
+                            onPress={() => handleThemeSelect(option.id)}
+                        >
+                            <View style={styles.modelHeader}>
+                                <View style={styles.modelInfo}>
+                                    <View style={styles.themeIconContainer}>
+                                        <Ionicons name={option.icon} size={20} color={colors.text} />
+                                    </View>
+                                    <Text style={[styles.modelName, { color: colors.text }]}>
+                                        {option.name}
+                                    </Text>
+                                </View>
+                                {selectedTheme === option.id ? (
+                                    <Ionicons name="checkmark-circle" size={24} color="#00FFCC" />
+                                ) : (
+                                    <View style={[styles.radioOuter, { borderColor: colors.tabIconDefault }]}>
+                                        <View style={styles.radioInner} />
+                                    </View>
+                                )}
+                            </View>
+                            <Text style={[styles.modelDescription, { color: colors.tabIconDefault }]}>
+                                {option.description}
+                            </Text>
+                        </Pressable>
+                    ))}
+                </View>
+
+                {/* ============================================================ */}
+                {/* AI MODEL SECTION */}
+                {/* ============================================================ */}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>
                         AI Coach Model
@@ -212,6 +269,14 @@ const styles = StyleSheet.create({
     modelDescription: {
         fontSize: 14,
         lineHeight: 20,
+    },
+    themeIconContainer: {
+        width: 32,
+        height: 32,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 4,
     },
     badge: {
         paddingHorizontal: 8,

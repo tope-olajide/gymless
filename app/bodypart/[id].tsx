@@ -10,13 +10,14 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     Pressable,
-    SafeAreaView,
     ScrollView,
     StyleSheet,
     Text,
     View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ModernExerciseCard } from '../../components/ui/ModernExerciseCard';
 import { BodyPart, getBodyPartById } from '../../data/bodyParts';
 import { Exercise, getExercisesByBodyPart } from '../../data/exercises';
 
@@ -71,12 +72,14 @@ export default function BodyPartDetailScreen() {
         );
     }
 
+    const insets = useSafeAreaInsets();
+
     return (
         <LinearGradient
             colors={['#0F0F1A', '#1A1A2E', '#16213E']}
             style={styles.container}
         >
-            <SafeAreaView style={styles.safeArea}>
+            <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
                 {/* Header */}
                 <View style={styles.header}>
                     <Pressable onPress={handleBack} style={styles.backButton}>
@@ -105,71 +108,34 @@ export default function BodyPartDetailScreen() {
                     </View>
                 </View>
 
-                {/* Exercises List */}
                 <ScrollView
                     style={styles.scrollView}
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
                 >
-                    {exercises.map((exercise, index) => (
-                        <Animated.View
-                            key={exercise.id}
-                            entering={FadeInDown.delay(index * 80).springify()}
-                        >
-                            <Pressable
-                                style={({ pressed }) => [
-                                    styles.exerciseCard,
-                                    pressed && styles.cardPressed,
-                                ]}
-                                onPress={() => handleExercisePress(exercise)}
+                    <View style={styles.exercisesGrid}>
+                        {exercises.map((exercise, index) => (
+                            <Animated.View
+                                key={exercise.id}
+                                entering={FadeInDown.delay(index * 80).springify()}
                             >
-                                <View style={styles.exerciseHeader}>
-                                    <View style={styles.typeContainer}>
-                                        <Text style={styles.typeIcon}>{getTypeIcon(exercise.type)}</Text>
-                                    </View>
-                                    <View style={styles.exerciseInfo}>
-                                        <Text style={styles.exerciseName}>{exercise.name}</Text>
-                                        <View style={styles.metaRow}>
-                                            <View style={[
-                                                styles.difficultyBadge,
-                                                { backgroundColor: getDifficultyColor(exercise.difficulty) + '20' }
-                                            ]}>
-                                                <Text style={[
-                                                    styles.difficultyText,
-                                                    { color: getDifficultyColor(exercise.difficulty) }
-                                                ]}>
-                                                    {exercise.difficulty}
-                                                </Text>
-                                            </View>
-                                            <Text style={styles.metaText}>
-                                                {exercise.type === 'hold'
-                                                    ? `${exercise.defaultHoldSeconds}s hold`
-                                                    : `${exercise.defaultReps} reps × ${exercise.defaultSets} sets`}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <Text style={styles.arrow}>→</Text>
-                                </View>
-
-                                <Text style={styles.exerciseDescription} numberOfLines={2}>
-                                    {exercise.description}
-                                </Text>
-
-                                {/* Target body parts */}
-                                <View style={styles.targetRow}>
-                                    {exercise.bodyParts.slice(0, 3).map((bpId) => {
-                                        const bp = getBodyPartById(bpId);
-                                        return bp ? (
-                                            <View key={bpId} style={styles.targetChip}>
-                                                <Text style={styles.targetIcon}>{bp.icon}</Text>
-                                                <Text style={styles.targetText}>{bp.name}</Text>
-                                            </View>
-                                        ) : null;
-                                    })}
-                                </View>
-                            </Pressable>
-                        </Animated.View>
-                    ))}
+                                <ModernExerciseCard
+                                    exercise={{
+                                        id: exercise.id,
+                                        name: exercise.name,
+                                        bodyPart: exercise.bodyParts[0],
+                                        reps: exercise.defaultReps,
+                                        sets: exercise.defaultSets,
+                                        imageUri: exercise.imageUri,
+                                        level: exercise.difficulty,
+                                        duration: exercise.type === 'hold' ? Math.ceil((exercise.defaultHoldSeconds || 0) / 60) : undefined
+                                    }}
+                                    index={index}
+                                    onPress={() => handleExercisePress(exercise)}
+                                />
+                            </Animated.View>
+                        ))}
+                    </View>
 
                     {exercises.length === 0 && (
                         <View style={styles.emptyState}>
@@ -181,7 +147,7 @@ export default function BodyPartDetailScreen() {
 
                     <View style={{ height: 40 }} />
                 </ScrollView>
-            </SafeAreaView>
+            </View>
         </LinearGradient>
     );
 }
@@ -263,94 +229,12 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         padding: 20,
-        gap: 12,
     },
-    exerciseCard: {
-        backgroundColor: 'rgba(255,255,255,0.03)',
-        borderRadius: 20,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)',
-    },
-    cardPressed: {
-        opacity: 0.7,
-        transform: [{ scale: 0.98 }],
-    },
-    exerciseHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 10,
-    },
-    typeContainer: {
-        width: 44,
-        height: 44,
-        borderRadius: 12,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
-    },
-    typeIcon: {
-        fontSize: 20,
-    },
-    exerciseInfo: {
-        flex: 1,
-    },
-    exerciseName: {
-        fontSize: 17,
-        fontWeight: '700',
-        color: '#FFFFFF',
-        marginBottom: 4,
-    },
-    metaRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    difficultyBadge: {
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderRadius: 8,
-    },
-    difficultyText: {
-        fontSize: 11,
-        fontWeight: '700',
-        textTransform: 'capitalize',
-    },
-    metaText: {
-        fontSize: 12,
-        color: 'rgba(255,255,255,0.5)',
-    },
-    arrow: {
-        fontSize: 18,
-        color: 'rgba(255,255,255,0.3)',
-    },
-    exerciseDescription: {
-        fontSize: 13,
-        color: 'rgba(255,255,255,0.6)',
-        lineHeight: 18,
-        marginBottom: 12,
-    },
-    targetRow: {
+    exercisesGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 6,
-    },
-    targetChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-        gap: 4,
-    },
-    targetIcon: {
-        fontSize: 12,
-    },
-    targetText: {
-        fontSize: 11,
-        color: 'rgba(255,255,255,0.6)',
+        gap: 16,
+        justifyContent: 'center',
     },
     emptyState: {
         alignItems: 'center',
