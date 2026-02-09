@@ -511,8 +511,22 @@ export default function CoachMode() {
         }
     };
 
+    const lastTooCloseSpeechRef = useRef<number>(0);
+    const frameSkipRef = useRef<number>(0);
+
+    // Stops speech when leaving screen
+    useEffect(() => {
+        return () => {
+            Speech.stop();
+        };
+    }, []);
+
     const handlePoseDetected = useCallback((pose: PushUpPose) => {
         if (!analyzerRef.current || !isDetecting || showCelebration) return;
+
+        // Skip frames for performance (process every 3rd frame)
+        frameSkipRef.current++;
+        if (frameSkipRef.current % 3 !== 0) return;
 
         // Convert PushUpPose to PoseData format
         const poseData: PoseData = {
@@ -540,20 +554,10 @@ export default function CoachMode() {
         const now = Date.now();
 
         // ============================================================
-        // PROXIMITY FILTER: Pause if user is touching screen/too close
-        // Detect if nose or shoulders are too close to edges or too large
+        // PROXIMITY FILTER: DISABLED
+        // User requested removal as it was too aggressive.
+        // Relying on 3-second countdown instead.
         // ============================================================
-        const nose = poseData.landmarks.nose;
-        if (nose && (nose.y < 0.1 || nose.y > 0.9 || nose.x < 0.1 || nose.x > 0.9)) {
-            if (!isTooClose) {
-                setIsTooClose(true);
-                setAiCoaching('⚠️ TOO CLOSE! Please move back');
-                speak('You are too close. Please stand back to start.');
-            }
-            return;
-        } else if (isTooClose) {
-            setIsTooClose(false);
-        }
 
         // ============================================================
         // READY STATE & COUNTDOWN: Only count when stable
