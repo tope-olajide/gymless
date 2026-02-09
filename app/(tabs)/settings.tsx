@@ -6,16 +6,17 @@
 
 import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
-import { AI_MODELS, AIModelId } from '@/services/ai/GeminiService';
+// AI_MODELS removed as we now use hardcoded Gemini 3 Flash via Firebase
 import { storageService, ThemePreference } from '@/services/storage/StorageService';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Pressable,
     SafeAreaView,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     View,
 } from 'react-native';
 
@@ -31,30 +32,31 @@ export default function SettingsScreen() {
     const colors = Colors[theme];
     const cardBg = theme === 'dark' ? '#1e2022' : '#f5f5f5';
 
-    const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash');
-    const [loading, setLoading] = useState(true);
+    // Advanced AI Settings
+    const [customKey, setCustomKey] = useState<string>('');
+    const [aiInterval, setAiInterval] = useState<number>(1.5);
+    const [showKeyInput, setShowKeyInput] = useState(false);
 
-    // Load saved AI model preference
     useEffect(() => {
-        const loadPreferences = async () => {
-            const model = await storageService.getAIModelPreference();
-            setSelectedModel(model);
-            setLoading(false);
-        };
-        loadPreferences();
+        loadSettings();
     }, []);
 
-    // Save model preference
-    const handleModelSelect = useCallback(async (modelId: string) => {
-        const model = AI_MODELS[modelId as AIModelId];
-        if (!model?.available) return;
+    const loadSettings = async () => {
+        const key = await storageService.getCustomGeminiKey();
+        const interval = await storageService.getAIInterval();
+        setCustomKey(key || '');
+        setAiInterval(interval);
+    };
 
-        setSelectedModel(modelId);
-        await storageService.setAIModelPreference(modelId);
-    }, []);
+    const handleSaveKey = async () => {
+        await storageService.setCustomGeminiKey(customKey.trim() || null);
+        setShowKeyInput(false);
+    };
 
-    const availableModels = Object.values(AI_MODELS).filter(m => m.available);
-    const comingSoonModels = Object.values(AI_MODELS).filter(m => !m.available);
+    const handleIntervalChange = async (value: number) => {
+        setAiInterval(value);
+        await storageService.setAIInterval(value);
+    };
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -113,95 +115,88 @@ export default function SettingsScreen() {
                 </View>
 
                 {/* ============================================================ */}
-                {/* AI MODEL SECTION */}
+                {/* AI ENGINE INFO */}
                 {/* ============================================================ */}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                        AI Coach Model
+                        AI Engine
                     </Text>
-                    <Text style={[styles.sectionSubtitle, { color: colors.tabIconDefault }]}>
-                        Choose your preferred AI for coaching and tips
-                    </Text>
-
-                    {/* Available Models */}
-                    {availableModels.map((model) => (
-                        <Pressable
-                            key={model.id}
-                            style={[
-                                styles.modelCard,
-                                {
-                                    backgroundColor: cardBg,
-                                    borderColor: selectedModel === model.id ? colors.tint : 'transparent',
-                                    borderWidth: selectedModel === model.id ? 2 : 0,
-                                },
-                            ]}
-                            onPress={() => handleModelSelect(model.id)}
-                        >
-                            <View style={styles.modelHeader}>
-                                <View style={styles.modelInfo}>
-                                    <Text style={[styles.modelName, { color: colors.text }]}>
-                                        {model.name}
-                                    </Text>
-                                    {model.id === 'gemini-2.5-flash' && (
-                                        <View style={[styles.badge, { backgroundColor: colors.tint }]}>
-                                            <Text style={styles.badgeText}>Recommended</Text>
-                                        </View>
-                                    )}
-                                    {model.id === 'gemini-3-flash-preview' && (
-                                        <View style={[styles.badge, { backgroundColor: '#9333ea' }]}>
-                                            <Text style={styles.badgeText}>Preview</Text>
-                                        </View>
-                                    )}
-                                </View>
-                                {selectedModel === model.id ? (
-                                    <Ionicons name="checkmark-circle" size={24} color={colors.tint} />
-                                ) : (
-                                    <View style={[styles.radioOuter, { borderColor: colors.tabIconDefault }]}>
-                                        <View style={styles.radioInner} />
-                                    </View>
-                                )}
-                            </View>
-                            <Text style={[styles.modelDescription, { color: colors.tabIconDefault }]}>
-                                {model.description}
-                            </Text>
-                        </Pressable>
-                    ))}
+                    <View style={[styles.infoBox, { backgroundColor: cardBg, marginTop: 10 }]}>
+                        <Ionicons name="flash" size={20} color={colors.tint} />
+                        <Text style={[styles.infoText, { color: colors.tabIconDefault }]}>
+                            {customKey ? 'Using Custom API Key' : 'Powered by Gemini 3 Flash Preview'}
+                        </Text>
+                    </View>
                 </View>
 
-                {/* Coming Soon Section */}
+                {/* ============================================================ */}
+                {/* ADVANCED AI CONFIG */}
+                {/* ============================================================ */}
                 <View style={styles.section}>
-                    <View style={styles.comingSoonHeader}>
-                        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                            Coming Soon
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                        Advanced Configuration
+                    </Text>
+
+                    {/* Frequency Picker */}
+                    <View style={[styles.configCard, { backgroundColor: cardBg }]}>
+                        <View style={styles.configHeader}>
+                            <Text style={[styles.configLabel, { color: colors.text }]}>Analysis Speed</Text>
+                            <Text style={[styles.configValue, { color: colors.tint }]}>{aiInterval.toFixed(1)}s</Text>
+                        </View>
+                        <Text style={[styles.configDesc, { color: colors.tabIconDefault }]}>
+                            Lower is faster but uses more quota.
                         </Text>
-                        <View style={[styles.tierBadge, { backgroundColor: colors.tabIconDefault }]}>
-                            <Ionicons name="information-circle-outline" size={14} color="#fff" />
-                            <Text style={styles.tierBadgeText}>Tier-2 API Key Required</Text>
+                        <View style={styles.pickerRow}>
+                            {[1.0, 1.5, 2.0, 3.0, 5.0].map((val) => (
+                                <Pressable
+                                    key={val}
+                                    onPress={() => handleIntervalChange(val)}
+                                    style={[
+                                        styles.pickerOption,
+                                        aiInterval === val && { backgroundColor: colors.tint }
+                                    ]}
+                                >
+                                    <Text style={[
+                                        styles.pickerText,
+                                        { color: aiInterval === val ? '#000' : colors.text }
+                                    ]}>{val}s</Text>
+                                </Pressable>
+                            ))}
                         </View>
                     </View>
 
-                    {comingSoonModels.map((model) => (
-                        <View
-                            key={model.id}
-                            style={[
-                                styles.modelCard,
-                                styles.disabledCard,
-                                { backgroundColor: cardBg },
-                            ]}
+                    {/* API Key Input */}
+                    <View style={[styles.configCard, { backgroundColor: cardBg }]}>
+                        <Pressable
+                            style={styles.configHeader}
+                            onPress={() => setShowKeyInput(!showKeyInput)}
                         >
-                            <View style={styles.modelHeader}>
-                                <View style={styles.modelInfo}>
-                                    <Text style={[styles.modelName, { color: colors.tabIconDefault }]}>
-                                        {model.name}
-                                    </Text>
-                                    <Ionicons name="lock-closed" size={16} color={colors.tabIconDefault} />
-                                </View>
+                            <View>
+                                <Text style={[styles.configLabel, { color: colors.text }]}>Custom Gemini API Key</Text>
+                                <Text style={[styles.configDesc, { color: colors.tabIconDefault }]}>
+                                    Override the default app key
+                                </Text>
                             </View>
-                            <Text style={[styles.modelDescription, { color: colors.tabIconDefault, opacity: 0.6 }]}>
-                                {model.description}
-                            </Text>
-                        </View>
-                    ))}
+                            <Ionicons name={showKeyInput ? "chevron-up" : "chevron-down"} size={20} color={colors.tabIconDefault} />
+                        </Pressable>
+
+                        {showKeyInput && (
+                            <View style={styles.inputContainer}>
+                                <TextInput
+                                    style={[styles.input, { color: colors.text, borderColor: colors.tabIconDefault }]}
+                                    placeholder="Enter API Key"
+                                    placeholderTextColor="gray"
+                                    value={customKey}
+                                    onChangeText={setCustomKey}
+                                    secureTextEntry
+                                    autoCapitalize="none"
+                                />
+                                <Pressable style={[styles.saveBtn, { backgroundColor: colors.tint }]} onPress={handleSaveKey}>
+                                    <Text style={styles.saveBtnText}>Save</Text>
+                                </Pressable>
+                            </View>
+                        )}
+                    </View>
                 </View>
 
                 {/* Info Footer */}
@@ -332,5 +327,64 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 14,
         lineHeight: 20,
+    },
+    // Config Styles
+    configCard: {
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 12,
+    },
+    configHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    configLabel: {
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    configValue: {
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    configDesc: {
+        fontSize: 12,
+        marginBottom: 16,
+    },
+    pickerRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 8,
+    },
+    pickerOption: {
+        flex: 1,
+        paddingVertical: 8,
+        borderRadius: 8,
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.1)',
+    },
+    pickerText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    inputContainer: {
+        marginTop: 10,
+        gap: 10,
+    },
+    input: {
+        borderWidth: 1,
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 14,
+    },
+    saveBtn: {
+        padding: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    saveBtnText: {
+        color: '#000',
+        fontWeight: 'bold',
     },
 });
