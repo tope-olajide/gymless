@@ -13,13 +13,6 @@ import { storageService, UserPreferences } from '../storage/StorageService';
 const GEMINI_KEY = Constants.expoConfig?.extra?.geminiApiKey as string | undefined;
 const BASE_URL = 'https://generativelanguage.googleapis.com';
 
-// ============================================================
-// RATE LIMITING: Prevent quota exhaustion (Free tier: 15 RPM)
-// ============================================================
-const MIN_REQUEST_INTERVAL_MS = 4000; // 4 seconds between requests (15 RPM)
-let lastRequestTime = 0;
-let requestCount = 0;
-
 // Supported models
 export const AI_MODELS = {
     'gemini-2.5-flash': {
@@ -73,27 +66,104 @@ interface GeminiResponse {
     };
 }
 
+// ============================================================
+// RATE LIMITING & QUEUE (Token Bucket-ish)
+// ============================================================
+const MIN_REQUEST_INTERVAL_MS = 4100; // 4.1s to be safe (15 RPM)
+let lastRequestTime = 0;
+let isProcessingQueue = false;
+
+type RequestPriority = 'high' | 'normal' | 'low';
+
+interface QueuedRequest {
+    prompt: string;
+    modelOverride?: string;
+    priority: RequestPriority;
+    resolve: (value: string | null) => void;
+    reject: (reason?: any) => void;
+    timestamp: number;
+}
+
+const requestQueue: QueuedRequest[] = [];
+
 /**
- * Generate content using Gemini API with dynamic model selection
- * Rate limited to prevent quota exhaustion
+ * Process the queue respecting the rate limit
  */
-async function generateContent(prompt: string, modelOverride?: string): Promise<string | null> {
+async function processQueue() {
+    if (isProcessingQueue || requestQueue.length === 0) return;
+
+    isProcessingQueue = true;
+
+    try {
+        while (requestQueue.length > 0) {
+            const now = Date.now();
+            const timeSinceLast = now - lastRequestTime;
+            const waitTime = Math.max(0, MIN_REQUEST_INTERVAL_MS - timeSinceLast);
+
+            if (waitTime > 0) {
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+
+            // Get next request (High priority first)
+            // Sort queue by priority each time? Or just use filter/find.
+            // Simple approach: Find first 'high', then 'normal', then 'low'
+            let nextIndex = requestQueue.findIndex(r => r.priority === 'high');
+            if (nextIndex === -1) nextIndex = requestQueue.findIndex(r => r.priority === 'normal');
+            if (nextIndex === -1) nextIndex = 0; // Take whatever is first (low)
+
+            const [request] = requestQueue.splice(nextIndex, 1);
+
+            lastRequestTime = Date.now();
+
+            try {
+                const result = await executeGeminiRequest(request.prompt, request.modelOverride);
+                request.resolve(result);
+            } catch (error) {
+                request.resolve(null); // Resolve null on error to keep app moving
+            }
+        }
+    } finally {
+        isProcessingQueue = false;
+    }
+}
+
+/**
+ * Enqueue a request
+ */
+function enqueueRequest(
+    prompt: string,
+    priority: RequestPriority = 'normal',
+    modelOverride?: string
+): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+        // Drop 'low' priority requests if queue is too full to prevent backlog
+        if (priority === 'low' && requestQueue.length > 3) {
+            console.log('[GeminiService] Dropping low priority request due to load');
+            resolve(null);
+            return;
+        }
+
+        requestQueue.push({
+            prompt,
+            modelOverride,
+            priority,
+            resolve,
+            reject,
+            timestamp: Date.now()
+        });
+
+        processQueue();
+    });
+}
+
+/**
+ * Validates and executes the actual API call
+ */
+async function executeGeminiRequest(prompt: string, modelOverride?: string): Promise<string | null> {
     if (!GEMINI_KEY) {
         console.warn('Gemini API key not configured');
         return null;
     }
-
-    // Rate limiting check
-    const now = Date.now();
-    const timeSinceLastRequest = now - lastRequestTime;
-
-    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL_MS) {
-        console.log(`[GeminiService] Rate limited. Wait ${MIN_REQUEST_INTERVAL_MS - timeSinceLastRequest}ms`);
-        return null; // Skip this request to avoid quota
-    }
-
-    lastRequestTime = now;
-    requestCount++;
 
     // Get user's preferred model or use override
     const model = modelOverride || await storageService.getAIModelPreference();
@@ -101,15 +171,12 @@ async function generateContent(prompt: string, modelOverride?: string): Promise<
     const apiVersion = isG3 ? 'v1beta' : 'v1';
     const url = `${BASE_URL}/${apiVersion}/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
-    // Build request body with model-specific config
-    // IMPORTANT: Use camelCase for all field names in generationConfig
     const body: Record<string, unknown> = {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
             temperature: 1.0,
             maxOutputTokens: 256,
             topP: 0.8,
-            // Gemini 3 exclusive for visual analysis
             ...(isG3 && { mediaResolution: 'high' }),
         },
     };
@@ -117,9 +184,7 @@ async function generateContent(prompt: string, modelOverride?: string): Promise<
     try {
         const response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
 
@@ -127,6 +192,10 @@ async function generateContent(prompt: string, modelOverride?: string): Promise<
 
         if (data.error) {
             console.error('Gemini API error:', data.error.message);
+            // If we hit a 429 despite our local limiter, wait longer next time
+            if (data.error.message.includes('Resource has been exhausted')) {
+                lastRequestTime = Date.now() + 5000; // Add penalty
+            }
             return null;
         }
 
@@ -135,6 +204,17 @@ async function generateContent(prompt: string, modelOverride?: string): Promise<
         console.error('Gemini request failed:', error);
         return null;
     }
+}
+
+/**
+ * Generate content using Gemini API (via Queue)
+ */
+async function generateContent(
+    prompt: string,
+    priority: RequestPriority = 'normal',
+    modelOverride?: string
+): Promise<string | null> {
+    return enqueueRequest(prompt, priority, modelOverride);
 }
 
 /**
@@ -150,7 +230,8 @@ export async function getExerciseTip(
     }
 
     const prompt = buildExerciseTipPrompt(exercise, preferences);
-    const tip = await generateContent(prompt);
+    // Tips are High priority as they block the user from starting (or are valid immediately)
+    const tip = await generateContent(prompt, 'high');
 
     return tip || getDefaultTipForExercise(exercise);
 }
@@ -210,8 +291,31 @@ Issue detected: ${formIssue}
 
 Give ONE brief correction (max 10 words). Be encouraging, not critical. No emojis.`;
 
-    const feedback = await generateContent(prompt);
+    const feedback = await generateContent(prompt, 'high');
     return feedback || 'Keep your form steady!';
+}
+
+/**
+ * Enhanced Coaching: Analyze a batch of movement data (e.g., every 5 reps)
+ */
+export async function analyzeMovementBatch(
+    exerciseId: string,
+    batchData: { repNumber: number; formScore: number; feedback: string[] }[],
+    preferences?: UserPreferences | null
+): Promise<string | null> {
+    const exercise = getExerciseById(exerciseId);
+    if (!exercise || batchData.length === 0) return null;
+
+    const avgScore = batchData.reduce((acc, curr) => acc + curr.formScore, 0) / batchData.length;
+    const commonIssues = Array.from(new Set(batchData.flatMap(r => r.feedback).filter(f => f.length > 0)));
+
+    const prompt = `You are a Pro-Level Movement Coach. Analyze this batch of ${batchData.length} ${exercise.name} reps:
+- Average Form Score: ${Math.round(avgScore)}%
+- Detected Issues: ${commonIssues.length > 0 ? commonIssues.join(', ') : 'None, great form!'}
+
+Provide ONE specialized, high-impact coaching cue (max 15 words) that will help the user reach the next level. Be technical but encouraging. No emojis.`;
+
+    return await generateContent(prompt);
 }
 
 /**
@@ -228,7 +332,8 @@ export async function getRestEncouragement(
 
 Give ONE short encouragement for their rest break (max 12 words). Be motivating! No emojis.`;
 
-    const encouragement = await generateContent(prompt);
+    // Rest encouragement is 'low' priority
+    const encouragement = await generateContent(prompt, 'low');
 
     if (encouragement) return encouragement;
 
@@ -280,7 +385,8 @@ Respond in this exact JSON format:
 Be encouraging and specific to their goal!`;
 
     try {
-        const response = await generateContent(prompt);
+        // Session summary is 'normal' priority
+        const response = await generateContent(prompt, 'normal');
         if (response) {
             const parsed = JSON.parse(response);
             return {
@@ -358,7 +464,7 @@ If they're on a streak, celebrate it!
 If they're new, welcome them warmly.
 No emojis at the start.`;
 
-    const nudge = await generateContent(prompt);
+    const nudge = await generateContent(prompt, 'low');
 
     if (nudge) return nudge;
 
@@ -381,6 +487,7 @@ export const geminiService = {
     getFormFeedback,
     getRestEncouragement,
     generateSessionSummary,
+    analyzeMovementBatch,
     getModificationSuggestion,
     isGeminiAvailable,
     getAccountabilityNudge,

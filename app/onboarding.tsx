@@ -16,12 +16,12 @@ import {
     Animated,
     Dimensions,
     Pressable,
-    SafeAreaView,
     ScrollView,
     StyleSheet,
     Text,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { storageService, UserPreferences } from '../services/storage/StorageService';
 
 const { width, height } = Dimensions.get('window');
@@ -346,12 +346,17 @@ export default function OnboardingScreen() {
         </View>
     );
 
+    const insets = useSafeAreaInsets();
+
     return (
         <LinearGradient
             colors={['#0F0F1A', '#1A1A2E', '#16213E']}
             style={styles.container}
         >
-            <SafeAreaView style={styles.safeArea}>
+            <View style={[
+                styles.safeArea,
+                { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 16) }
+            ]}>
                 {/* Progress bar */}
                 <View style={styles.progressContainer}>
                     <View style={styles.progressBar}>
@@ -412,7 +417,7 @@ export default function OnboardingScreen() {
                         </LinearGradient>
                     </Pressable>
                 </View>
-            </SafeAreaView>
+            </View>
         </LinearGradient>
     );
 }

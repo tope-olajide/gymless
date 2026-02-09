@@ -801,37 +801,37 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         backgroundColor: 'rgba(255,255,255,0.05)',
-        borderRadius: 12,
         padding: 16,
-        marginBottom: 8,
+        borderRadius: 16,
+        marginBottom: 12,
     },
     workoutInfo: {
         flex: 1,
     },
     workoutName: {
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: '600',
         color: '#fff',
+        marginBottom: 4,
     },
     workoutDate: {
         fontSize: 12,
         color: '#888',
-        marginTop: 2,
     },
     workoutStats: {
         alignItems: 'flex-end',
     },
     workoutReps: {
-        fontSize: 14,
+        fontSize: 15,
         fontWeight: '700',
         color: '#fff',
+        marginBottom: 2,
     },
     workoutForm: {
         fontSize: 12,
         fontWeight: '600',
-        marginTop: 2,
     },
     bottomPadding: {
-        height: 100,
+        height: 60,
     },
 });

@@ -1,5 +1,6 @@
 // Enhanced AI Coach - Works with any exercise
 import { Keypoint, PushUpPose } from '@/types';
+import { BlurView } from 'expo-blur';
 import { CameraType, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -463,8 +464,19 @@ export default function CoachMode() {
     const analyzerRef = useRef<ExerciseAnalyzer | null>(null);
     const sessionStartRef = useRef<number>(0);
     const lastCoachingRef = useRef<number>(0);
-    const lastPhaseTimeRef = useRef<number>(Date.now()); // For idle detection
+    const lastPhaseTimeRef = useRef<number>(Date.now()); // For idle/stall detection
     const lastPhaseRef = useRef<string>('start'); // Track phase changes for voice cues
+
+    // Batch & Trigger state
+    const movementBufferRef = useRef<{ repNumber: number; formScore: number; feedback: string[] }[]>([]);
+    const [isStalled, setIsStalled] = useState(false);
+
+    // Ready State & Countdown
+    const [isStable, setIsStable] = useState(false);
+    const [isCountingDown, setIsCountingDown] = useState(false);
+    const [countdownValue, setCountdownValue] = useState(3);
+    const stabilityStartRef = useRef<number | null>(null);
+    const [isTooClose, setIsTooClose] = useState(false);
 
     // Load preferences and exercise
     useEffect(() => {
@@ -499,8 +511,22 @@ export default function CoachMode() {
         }
     };
 
+    const lastTooCloseSpeechRef = useRef<number>(0);
+    const frameSkipRef = useRef<number>(0);
+
+    // Stops speech when leaving screen
+    useEffect(() => {
+        return () => {
+            Speech.stop();
+        };
+    }, []);
+
     const handlePoseDetected = useCallback((pose: PushUpPose) => {
         if (!analyzerRef.current || !isDetecting || showCelebration) return;
+
+        // Skip frames for performance (process every 3rd frame)
+        frameSkipRef.current++;
+        if (frameSkipRef.current % 3 !== 0) return;
 
         // Convert PushUpPose to PoseData format
         const poseData: PoseData = {
@@ -527,6 +553,40 @@ export default function CoachMode() {
         const result = analyzerRef.current.analyze(poseData);
         const now = Date.now();
 
+        // ============================================================
+        // PROXIMITY FILTER: DISABLED
+        // User requested removal as it was too aggressive.
+        // Relying on 3-second countdown instead.
+        // ============================================================
+
+        // ============================================================
+        // READY STATE & COUNTDOWN: Only count when stable
+        // ============================================================
+        if (!isDetecting || isCountingDown) {
+            // Stability Check while in 'ready' phase but not yet 'detecting' (meaning not active set)
+            const isNeutral = result.phase === 'start' || result.phase === 'up' || result.phase === 'transition';
+            const highConf = result.confidence > 0.8;
+
+            if (isNeutral && highConf) {
+                if (!stabilityStartRef.current) {
+                    stabilityStartRef.current = now;
+                } else if (now - stabilityStartRef.current > 1500 && !isStable && !isCountingDown) {
+                    setIsStable(true);
+                    startCountdown();
+                }
+            } else {
+                stabilityStartRef.current = null;
+                setIsStable(false);
+            }
+
+            if (!isCountingDown) return; // Wait for countdown before proceeding to rep counting
+        }
+
+        // Velocity Filter: Ignore jerky movements (setup, phone adjust)
+        if (analyzerRef.current.getVelocity() > 2.5) {
+            return; // Ignore frames with too much sporadic movement
+        }
+
         setFormScore(result.formScore);
         setPhase(result.phase as any);
 
@@ -535,47 +595,77 @@ export default function CoachMode() {
 
         // ============================================================
         // REP COUNTING: Use analyzer's repCompleted flag directly
-        // This is now based on actual hysteresis angle thresholds
         // ============================================================
         if (result.repCompleted) {
-            const currentReps = analyzerRef.current.getSessionStats().repCount;
+            const stats = analyzerRef.current.getSessionStats();
+            const currentReps = stats.repCount;
             setRepCount(currentReps);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             lastPhaseTimeRef.current = now;
+            setIsStalled(false);
+
+            // Buffer this rep for batch analysis
+            const reps = analyzerRef.current.getCompletedReps();
+            const latestRep = reps[reps.length - 1];
+            if (latestRep) {
+                movementBufferRef.current.push({
+                    repNumber: latestRep.repNumber,
+                    formScore: latestRep.formScore,
+                    feedback: latestRep.feedback,
+                });
+            }
 
             // Green flash effect - clear after 300ms
             setRepJustCounted(true);
             setTimeout(() => setRepJustCounted(false), 300);
 
+            // Trigger: Milestone Check (Every 5 reps)
+            if (currentReps > 0 && currentReps % 5 === 0) {
+                const batch = [...movementBufferRef.current];
+                movementBufferRef.current = []; // Clear buffer
+
+                // Async API call for Pro-Level feedback
+                geminiService.analyzeMovementBatch(selectedExercise?.id || '', batch, preferences)
+                    .then(proFeedback => {
+                        if (proFeedback) {
+                            setAiCoaching(`🚀 PRO TIP: ${proFeedback}`);
+                            speak(proFeedback);
+                            lastCoachingRef.current = Date.now();
+                        }
+                    });
+            }
+
             // Check for workout completion
             if (currentReps >= targetReps) {
-                // 🎉 TARGET HIT - CELEBRATE!
                 setShowCelebration(true);
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 speak(`Amazing! ${currentReps} out of ${targetReps}! You crushed it!`);
                 return;
             }
 
-            // Announce rep with encouragement
-            const remaining = targetReps - currentReps;
-            if (remaining <= 3 && remaining > 0) {
-                speak(`${currentReps}! Only ${remaining} more!`);
-            } else if (currentReps % 5 === 0) {
-                speak(`${currentReps}! Keep it up!`);
-            } else {
-                const repCues = [`${currentReps}!`, `${currentReps}. Good!`, `${currentReps}. Nice form!`];
-                speak(repCues[Math.floor(Math.random() * repCues.length)]);
+            // Standard rep counting cues (only if not doing milestone feedback)
+            if (currentReps % 5 !== 0) {
+                const remaining = targetReps - currentReps;
+                if (remaining <= 3 && remaining > 0) {
+                    speak(`${currentReps}! Only ${remaining} more!`);
+                } else {
+                    const repCues = [`${currentReps}!`, `${currentReps}. Good!`, `${currentReps}. Nice form!`];
+                    speak(repCues[Math.floor(Math.random() * repCues.length)]);
+                }
+                setAiCoaching(`${currentReps}/${targetReps}`);
             }
-            setAiCoaching(`${currentReps}/${targetReps}`);
         }
 
-        // Track phase for voice cues
+        // ============================================================
+        // STALL DETECTION & INTELLIGENT TRIGGERS
+        // ============================================================
         if (result.phaseJustChanged && lastPhaseRef.current !== result.phase) {
             lastPhaseTimeRef.current = now;
+            setIsStalled(false);
 
-            // Voice cue when reaching bottom
+            // Voice cue when reaching bottom (Down phase)
             if (result.phase === 'down') {
-                const downCues = ['Good depth! Now drive up!', 'Hold... power up!', 'Nice! Push back up!'];
+                const downCues = ['Good depth!', 'Hold it...', 'Nice! Hold there.'];
                 const cue = downCues[Math.floor(Math.random() * downCues.length)];
                 setAiCoaching(cue);
                 speak(cue);
@@ -583,22 +673,43 @@ export default function CoachMode() {
             lastPhaseRef.current = result.phase;
         }
 
-        // Idle detection: Prompt if no phase change for 4+ seconds
-        if (now - lastPhaseTimeRef.current > 4000 && now - lastCoachingRef.current > 6000) {
+        // Trigger: Stall Detection (Stuck in 'down' phase for >3 seconds)
+        if (result.phase === 'down' && !isStalled && (now - lastPhaseTimeRef.current > 3000)) {
+            setIsStalled(true);
+            const motivator = "Drive up! You've got the power! Push!";
+            setAiCoaching(motivator);
+            speak(motivator);
+            lastCoachingRef.current = now;
+
+            // Trigger Gemini for a "Stall Corrector" hint if haven't coached in a while
+            if (now - lastCoachingRef.current > 10000) {
+                geminiService.getFormFeedback(selectedExercise?.id || '', "user is struggling at the bottom of the movement", repCount)
+                    .then(correction => {
+                        if (correction) {
+                            setAiCoaching(correction);
+                            speak(correction);
+                            lastCoachingRef.current = Date.now();
+                        }
+                    });
+            }
+        }
+
+        // Idle detection: Prompt if no movement for 10+ seconds
+        if (result.phase === 'start' && now - lastPhaseTimeRef.current > 10000 && now - lastCoachingRef.current > 15000) {
             const idleCues = [
-                'Take your time. Next rep when ready.',
-                'Rest up. Ready when you are.',
-                'Give me the next one when you\'re set.'
+                'Ready for the next one?',
+                'Don\'t stop now, keep that momentum!',
+                'Next rep when you\'re ready.'
             ];
             const cue = idleCues[Math.floor(Math.random() * idleCues.length)];
             setAiCoaching(cue);
             speak(cue);
             lastCoachingRef.current = now;
-            lastPhaseTimeRef.current = now; // Reset to avoid repeating
+            lastPhaseTimeRef.current = now;
         }
 
-        // Form feedback (throttled, only if not giving phase cues)
-        if (result.formFeedback.length > 0 && now - lastCoachingRef.current > 5000) {
+        // Form feedback (throttled)
+        if (result.formFeedback.length > 0 && now - lastCoachingRef.current > 8000) {
             const feedback = result.formFeedback[0];
             if (feedback.message && feedback.message !== 'Position yourself so your full body is visible') {
                 setAiCoaching(feedback.message);
@@ -606,7 +717,35 @@ export default function CoachMode() {
                 lastCoachingRef.current = now;
             }
         }
-    }, [isDetecting, voiceEnabled, targetReps, showCelebration]);
+    }, [isDetecting, voiceEnabled, targetReps, showCelebration, isStalled, selectedExercise, repCount, preferences]);
+
+    const startCountdown = () => {
+        if (isCountingDown) return;
+        setIsCountingDown(true);
+        setCountdownValue(3);
+        speak('Get ready!');
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+        const count = (val: number) => {
+            if (val > 0) {
+                setCountdownValue(val);
+                speak(val.toString());
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setTimeout(() => count(val - 1), 1000);
+            } else {
+                setCountdownValue(0);
+                speak('Go!');
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                setTimeout(() => {
+                    setIsCountingDown(false);
+                    // Start the real detection
+                    sessionStartRef.current = Date.now();
+                }, 500);
+            }
+        };
+
+        count(3);
+    };
 
     const startDetection = async () => {
         if (!selectedExercise) return;
@@ -832,7 +971,7 @@ export default function CoachMode() {
                             </View>
                         </View>
 
-                        {/* Form Score Badge */}
+                        {/* Form Score Badge - Moved to Top Left to avoid right-side overlap */}
                         <View style={[
                             styles.glassFormBadge,
                             { borderColor: formScore >= 90 ? '#00FFCC' : formScore >= 70 ? '#FFB800' : '#FF6B6B' }
@@ -846,16 +985,25 @@ export default function CoachMode() {
                             <Text style={styles.glassFormLabel}>FORM</Text>
                         </View>
 
-                        {/* Phase Indicator - Dynamic */}
+                        {/* Phase Indicator - Dynamic Arrow UI with Highlight */}
                         <View style={[
                             styles.glassPhaseIndicator,
-                            { backgroundColor: phase === 'down' ? 'rgba(0, 255, 204, 0.2)' : 'rgba(255, 255, 255, 0.1)' }
+                            {
+                                backgroundColor: phase === 'down' ? 'rgba(0, 255, 204, 0.2)' : phase === 'up' ? 'rgba(251, 146, 60, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                                borderColor: phase === 'down' ? '#00FFCC' : phase === 'up' ? '#FB923C' : 'rgba(255, 255, 255, 0.2)'
+                            }
                         ]}>
                             <Text style={[
-                                styles.glassPhaseText,
-                                { color: phase === 'down' ? '#00FFCC' : '#FFFFFF' }
+                                styles.glassPhaseIcon,
+                                { color: phase === 'down' ? '#00FFCC' : phase === 'up' ? '#FB923C' : '#FFFFFF' }
                             ]}>
-                                {phase === 'down' ? '↓ DOWN' : phase === 'up' || phase === 'start' ? '↑ UP' : phase === 'hold' ? '⏸ HOLD' : '• READY'}
+                                {phase === 'down' ? '↓' : phase === 'up' ? '↑' : phase === 'hold' ? '⏸' : '•'}
+                            </Text>
+                            <Text style={[
+                                styles.glassPhaseText,
+                                { color: phase === 'down' ? '#00FFCC' : phase === 'up' ? '#FB923C' : '#FFFFFF' }
+                            ]}>
+                                {phase === 'down' ? 'DESCEND' : phase === 'up' ? 'ASCEND' : phase === 'hold' ? 'HOLD' : 'READY'}
                             </Text>
                         </View>
 
@@ -873,6 +1021,37 @@ export default function CoachMode() {
                             </Pressable>
                         </View>
                     </View>
+
+                    {/* Proximity Warning */}
+                    {isTooClose && (
+                        <View style={styles.proximityWarningIndicator}>
+                            {Platform.OS === 'ios' ? (
+                                <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+                            ) : (
+                                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.8)' }]} />
+                            )}
+                            <Text style={styles.proximityWarningText}>⚠️ TOO CLOSE</Text>
+                        </View>
+                    )}
+
+                    {/* Countdown Overlay */}
+                    {isCountingDown && (
+                        <View style={styles.countdownOverlay}>
+                            {Platform.OS === 'ios' ? (
+                                <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+                            ) : (
+                                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.8)' }]} />
+                            )}
+                            <View style={styles.countdownCircle}>
+                                <Text style={styles.countdownLabel}>GET READY</Text>
+                                <View style={styles.countdownNumberContainer}>
+                                    <Text style={styles.countdownNumber}>
+                                        {countdownValue > 0 ? countdownValue : 'GO!'}
+                                    </Text>
+                                </View>
+                            </View>
+                        </View>
+                    )}
 
                     {/* ============================================================ */}
                     {/* CELEBRATION OVERLAY */}
@@ -1475,7 +1654,7 @@ const styles = StyleSheet.create({
     glassFormBadge: {
         position: 'absolute',
         top: 100,
-        right: 20,
+        left: 20, // Moved to Left
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         borderRadius: 16,
         paddingHorizontal: 16,
@@ -1496,18 +1675,24 @@ const styles = StyleSheet.create({
     },
     glassPhaseIndicator: {
         position: 'absolute',
-        top: 220,
+        top: 260, // Pushed further down to avoid rep counter overlap
         alignSelf: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
         paddingHorizontal: 24,
         paddingVertical: 12,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
+        borderRadius: 24,
+        borderWidth: 2,
+    },
+    glassPhaseIcon: {
+        fontSize: 32,
+        fontWeight: '900',
     },
     glassPhaseText: {
-        fontSize: 18,
-        fontWeight: '800',
-        letterSpacing: 2,
+        fontSize: 20,
+        fontWeight: '900',
+        letterSpacing: 3,
     },
     glassCoachingBubble: {
         position: 'absolute',
@@ -1613,5 +1798,67 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: 'rgba(255, 255, 255, 0.6)',
+    },
+    // ============================================================
+    // COUNTDOWN & PROXIMITY STYLES
+    // ============================================================
+    countdownOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 200,
+    },
+    countdownCircle: {
+        width: 240,
+        height: 240,
+        borderRadius: 120,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderWidth: 4,
+        borderColor: '#00FFCC',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#00FFCC',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5,
+        shadowRadius: 30,
+    },
+    countdownLabel: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: '#00FFCC',
+        letterSpacing: 4,
+        marginBottom: 8,
+    },
+    countdownNumberContainer: {
+        height: 100,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    countdownNumber: {
+        fontSize: 100,
+        fontWeight: '900',
+        color: '#FFFFFF',
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 4 },
+        textShadowRadius: 10,
+    },
+    proximityWarningIndicator: {
+        position: 'absolute',
+        top: '40%',
+        alignSelf: 'center',
+        paddingHorizontal: 32,
+        paddingVertical: 16,
+        borderRadius: 20,
+        borderWidth: 2,
+        borderColor: '#FF4444',
+        overflow: 'hidden',
+        zIndex: 150,
+    },
+    proximityWarningText: {
+        fontSize: 24,
+        fontWeight: '900',
+        color: '#FF4444',
+        letterSpacing: 2,
+        textAlign: 'center',
     },
 });
