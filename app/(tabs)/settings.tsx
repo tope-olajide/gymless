@@ -188,7 +188,6 @@ export default function SettingsScreen() {
                                     placeholderTextColor="gray"
                                     value={customKey}
                                     onChangeText={setCustomKey}
-                                    secureTextEntry
                                     autoCapitalize="none"
                                 />
                                 <Pressable style={[styles.saveBtn, { backgroundColor: colors.tint }]} onPress={handleSaveKey}>

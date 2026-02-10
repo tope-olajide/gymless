@@ -42,24 +42,33 @@ export function useGymCoach() {
 
         if (customKey) {
             console.log('Coach: using Custom API Key');
-            const genAI = new GoogleGenerativeAI(customKey);
-            modelRef.current = genAI.getGenerativeModel({
-                model: GEMINI_MODEL,
-                generationConfig: {
-                    temperature: 0.1,
-                    topP: 0.8,
-                }
-            }) as JSModel;
+            try {
+                const genAI = new GoogleGenerativeAI(customKey);
+                modelRef.current = genAI.getGenerativeModel({
+                    model: GEMINI_MODEL,
+                    generationConfig: {
+                        temperature: 0.1,
+                        topP: 0.8,
+                    }
+                }) as JSModel;
+            } catch (e) {
+                console.error("Failed to init Custom Model", e);
+            }
         } else {
             console.log('Coach: using Firebase SDK');
-            const ai = getAI();
-            modelRef.current = ai.getGenerativeModel({
-                model: GEMINI_MODEL,
-                generationConfig: {
-                    temperature: 0.1,
-                    mediaResolution: 'low',
-                },
-            }) as FirebaseModel;
+            try {
+                const ai = getAI();
+                modelRef.current = ai.getGenerativeModel({
+                    model: GEMINI_MODEL,
+                    generationConfig: {
+                        temperature: 0.1,
+                        mediaResolution: 'low',
+                    },
+                }) as FirebaseModel;
+            } catch (e) {
+                console.error("Failed to init Firebase Model. Ensure google-services.json is present or use Custom Key.", e);
+                setAiRateDisplay("Not Configured");
+            }
         }
     };
 
@@ -69,36 +78,34 @@ export function useGymCoach() {
             return null;
         }
 
-        if (isThinking || !modelRef.current) return null;
+        if (isThinking || !modelRef.current) {
+            // console.log("Skipping analysis: Thinking?", isThinking, "Model?", !!modelRef.current);
+            return null;
+        }
 
         setIsThinking(true);
         lastAnalysisTime.current = now;
 
         try {
+            console.log(` analyzing frame for ${exercise.name}...`);
             const exerciseCues = getSystemPromptForExercise(exercise);
+
             const prompt = `
-            You are a high-speed fitness coach. Analyze this frame of a user doing ${exercise.name}.
+            You are a high-energy fitness coach using Gemini 3 Flash.
             
-            CRITICAL RULES:
-            1. Response must be extremely short (max 10 words).
-            2. If form is good, say "Good!" or "Nice!".
-            3. If form is bad, give ONE specific correction keying on: ${exerciseCues}
-            4. Current Rep: ${currentRepCount}
+            Analyze this user doing ${exercise.name}.
+            Current Rep Count: ${currentRepCount}
             
-            Respond with ONLY the actionable feedback cue.
+            INSTRUCTIONS:
+            1. If form is incorrect, Provide a SHORT, SHARP correction (e.g., "Lower your hips!", "Chin up!").
+            2. If form is perfect, give variety of praise (e.g., "Perfect form!", "Too easy!", "Light weight!", "Crushing it!").
+            3. Keep it under 6 words. Usage of slang like "Beast mode" or "Clean" is encouraged if appropriate.
+            4. Do NOT repeat the same phrase twice in a row.
+            
+            Respond with ONLY the spoken feedback.
             `;
 
             let feedback = '';
-
-            // Handle different SDKs
-            // Firebase SDK uses contents: [{ role: 'user', parts: [...] }]
-            // JS SDK uses generateContent([ ... ]) or object
-
-            // Both generally support the object format with contents array, but safest is to check or try/catch if unsure.
-            // However, Firebase SDK 'generateContent' takes { contents: [] }
-            // JS SDK 'generateContent' takes ( [ part, part ] ) OR { contents: [] } (in newer versions)
-
-            // Using a unified approach if possible, or branching logic if strictly typed differently
 
             // Construct parts
             const parts = [
@@ -110,16 +117,20 @@ export function useGymCoach() {
                 contents: [{ role: 'user', parts }]
             });
 
+            console.log("🔹 Gemini Raw Response:", result.response.text());
             feedback = result.response.text().trim();
 
             if (feedback && feedback.length > 0) {
-                const isSpeaking = await Speech.isSpeakingAsync();
-                if (!isSpeaking) {
-                    Speech.speak(feedback, {
-                        rate: 1.1,
-                        pitch: 1.0
-                    });
-                }
+                // Enhanced Speech Logic: Queue the message instead of skipping
+                console.log("🔊 Queuing AI Feedback:", feedback);
+                Speech.speak(feedback, {
+                    rate: 1.1,
+                    pitch: 1.0,
+                    onDone: () => console.log("✅ Speech finished"),
+                    onError: (e) => console.error("❌ Speech Error:", e)
+                });
+            } else {
+                console.log("⚠️ Empty feedback from Gemini");
             }
 
             return feedback;
