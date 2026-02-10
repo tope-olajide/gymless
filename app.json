@@ -63,6 +63,14 @@
             }
           }
         }
+      ],
+      [
+        "react-native-mediapipe-posedetection",
+        {
+          "assetsPaths": [
+            "./assets/models/"
+          ]
+        }
       ]
     ],
     "experiments": {

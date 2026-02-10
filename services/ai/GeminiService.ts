@@ -1,24 +1,40 @@
 /**
  * GeminiService
  * 
- * AI-powered tips, coaching, and session summaries using the Firebase AI SDK.
- * Powered exclusively by Gemini 3 Flash Preview (Agentic Vision).
+ * AI-powered tips, coaching, and session summaries using the Google AI SDK.
+ * Powered by Gemini 1.5 Flash (or user preference).
  */
 
-import { getAI } from '@react-native-firebase/ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Exercise, getExerciseById } from '../../data/exercises';
-import { UserPreferences } from '../storage/StorageService';
+import { UserPreferences, storageService } from '../storage/StorageService';
 
-// Hardcoded Model Configuration
-const GEMINI_MODEL = 'gemini-3-flash-preview';
+// Default Model Configuration
+const DEFAULT_MODEL = 'gemini-1.5-flash';
 
 /**
  * Get the Generative Model instance
+ * Prioritizes:
+ * 1. Custom Key from Settings
+ * 2. EXPO_PUBLIC_GEMINI_API_KEY from .env
  */
-function getModel() {
-    const ai = getAI();
-    return ai.getGenerativeModel({
-        model: GEMINI_MODEL,
+async function getModel() {
+    let apiKey = await storageService.getCustomGeminiKey();
+
+    if (!apiKey) {
+        apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+    }
+
+    if (!apiKey) {
+        console.warn('⚠️ No Gemini API Key found. AI features will not work.');
+        return null;
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const modelName = await storageService.getAIModelPreference() || DEFAULT_MODEL;
+
+    return genAI.getGenerativeModel({
+        model: modelName,
         generationConfig: {
             temperature: 0.7,
             topP: 0.8,
@@ -31,7 +47,9 @@ function getModel() {
  */
 async function generateContent(prompt: string): Promise<string | null> {
     try {
-        const model = getModel();
+        const model = await getModel();
+        if (!model) return null;
+
         const result = await model.generateContent(prompt);
         return result.response.text();
     } catch (error) {
@@ -214,10 +232,12 @@ export async function getModificationSuggestion(
 }
 
 /**
- * Check if Gemini is configured (Available via Firebase SDK)
+ * Check if Gemini is configured
  */
-export function isGeminiAvailable(): boolean {
-    return true; // Firebase handles keys via google-services.json
+export async function isGeminiAvailable(): Promise<boolean> {
+    const customKey = await storageService.getCustomGeminiKey();
+    if (customKey) return true;
+    return !!process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 }
 
 /**
@@ -241,6 +261,44 @@ export async function getAccountabilityNudge(
     return nudge || "Consistency is key. Great job showing up!";
 }
 
+/**
+ * Analyze form from an image
+ */
+export async function analyzeForm(
+    imageUri: string, // Base64 or URI
+    exercise: Exercise,
+    repCount: number
+): Promise<string | null> {
+    try {
+        const model = await getModel();
+        if (!model) return null;
+
+        // Prepare image part
+        const imageBase64 = imageUri.split(',')[1] || imageUri;
+
+        const prompt = `Analyze this user doing ${exercise.name} (Rep ${repCount}).
+        Identify ANY form errors.
+        If form is good, say "Form looks good!".
+        If there is an error, give ONE short correction (max 10 words).
+        Be strict but helpful.`;
+
+        const result = await model.generateContent([
+            prompt,
+            {
+                inlineData: {
+                    data: imageBase64,
+                    mimeType: 'image/jpeg'
+                }
+            }
+        ]);
+
+        return result.response.text();
+    } catch (error) {
+        console.error('Gemini Vision analysis failed:', error);
+        return null;
+    }
+}
+
 export const geminiService = {
     getExerciseTip,
     getFormFeedback,
@@ -250,4 +308,5 @@ export const geminiService = {
     getModificationSuggestion,
     isGeminiAvailable,
     getAccountabilityNudge,
+    analyzeForm
 };
