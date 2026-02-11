@@ -2,7 +2,7 @@
  * GeminiService
  * 
  * AI-powered tips, coaching, and session summaries using the Google AI SDK.
- * Powered by Gemini 1.5 Flash (or user preference).
+ * Powered by Gemini 3 Flash.
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -10,7 +10,7 @@ import { Exercise, getExerciseById } from '../../data/exercises';
 import { UserPreferences, storageService } from '../storage/StorageService';
 
 // Default Model Configuration
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+const DEFAULT_MODEL = 'gemini-3-flash-preview';
 
 /**
  * Get the Generative Model instance
