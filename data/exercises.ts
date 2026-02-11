@@ -1215,3 +1215,4 @@ export function getExercisesGroupedByBodyPart(): Record<string, Exercise[]> {
 
     return grouped;
 }
+

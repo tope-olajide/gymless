@@ -21,6 +21,8 @@ const KEYS = {
     AI_MODEL_PREFERENCE: '@gymless/ai_model_preference',
     CHALLENGE_PROGRESS: '@gymless/challenge_progress',
     THEME_PREFERENCE: '@gymless/theme_preference',
+    CUSTOM_GEMINI_KEY: '@gymless/custom_gemini_key',
+    AI_INTERVAL: '@gymless/ai_interval',
 };
 
 // Types
@@ -330,14 +332,47 @@ class StorageService {
     async getAIModelPreference(): Promise<string> {
         try {
             const value = await AsyncStorage.getItem(KEYS.AI_MODEL_PREFERENCE);
-            return value || 'gemini-2.5-flash'; // Default to stable model
+            return value || 'gemini-3-flash-preview'; // Default to beta model
         } catch {
-            return 'gemini-2.5-flash';
+            return 'gemini-3-flash-preview';
         }
     }
 
     async setAIModelPreference(model: string): Promise<void> {
         await AsyncStorage.setItem(KEYS.AI_MODEL_PREFERENCE, model);
+    }
+
+    // ==========================================
+    // ADVANCED AI SETTINGS
+    // ==========================================
+
+    async getCustomGeminiKey(): Promise<string | null> {
+        try {
+            return await AsyncStorage.getItem(KEYS.CUSTOM_GEMINI_KEY);
+        } catch {
+            return null;
+        }
+    }
+
+    async setCustomGeminiKey(key: string | null): Promise<void> {
+        if (key) {
+            await AsyncStorage.setItem(KEYS.CUSTOM_GEMINI_KEY, key);
+        } else {
+            await AsyncStorage.removeItem(KEYS.CUSTOM_GEMINI_KEY);
+        }
+    }
+
+    async getAIInterval(): Promise<number> {
+        try {
+            const value = await AsyncStorage.getItem(KEYS.AI_INTERVAL);
+            return value ? parseFloat(value) : 1.5; // Default 1.5s
+        } catch {
+            return 1.5;
+        }
+    }
+
+    async setAIInterval(seconds: number): Promise<void> {
+        await AsyncStorage.setItem(KEYS.AI_INTERVAL, seconds.toString());
     }
 
     // ==========================================
