@@ -332,9 +332,9 @@ class StorageService {
     async getAIModelPreference(): Promise<string> {
         try {
             const value = await AsyncStorage.getItem(KEYS.AI_MODEL_PREFERENCE);
-            return value || 'gemini-2.5-flash'; // Default to stable model
+            return value || 'gemini-3-flash-preview'; // Default to beta model
         } catch {
-            return 'gemini-2.5-flash';
+            return 'gemini-3-flash-preview';
         }
     }
 
